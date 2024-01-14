@@ -1,3 +1,8 @@
+import os
+import time
+from typing import List, Union, Optional
+from dataclasses import dataclass
+import asyncio
 from prompt_types import (
     BaseProps,
     Node,
@@ -29,7 +34,7 @@ from prompt_types import (
     Prompt,
     BreakToken,
 )
-from typing import List
+
 from openai_helper import (
     CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT,
     CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR,
@@ -38,6 +43,8 @@ from openai_helper import (
     is_usable_language_model,
     usable_language_models,
 )
+from output_cache import OutputCatcher
+from tokenizer import get_tokenizer_name, num_tokens
 
 
 # Type Checking Functions
@@ -118,6 +125,10 @@ def sum_prompts(a, b):
     if is_plain_prompt(a) and is_plain_prompt(b):
         return sum_prompt_strings(a, b)
     raise ValueError(f"Cannot sum prompts: {a} and {b}")
+
+
+def is_development_environment():
+    return os.environ.get("ENVIRONMENT") == "development"
 
 
 def create_element(tag, props=None, *children) -> PromptElement:
@@ -264,5 +275,347 @@ async def render(elem: PromptElement, options: RenderOptions) -> RenderOutput:
     return render_binary_search(elem, options)
 
 
-def render_binary_search():
-    return
+async def render_binary_search(elem: PromptElement, options: RenderOptions) -> RenderOutput:
+    start_time = time.time() if is_development_environment() else None
+
+    token_limit = options.get("token_limit", MAX_TOKENS.get(options.get("model")))
+    if token_limit is None:
+        raise ValueError("Must specify model or tokenLimit")
+
+    tokenizer = options.get("tokenizer", get_tokenizer_name(options.get("model")))
+    if tokenizer is None:
+        raise ValueError("Must specify model or tokenizer")
+
+    # Validate prompt
+    start_time_validating = time.time() if is_development_environment() else None
+    validate_unrendered_prompt(elem)
+    if is_development_environment():
+        print(f"Validating prompt took {time.time() - start_time_validating} ms")
+
+    # Compute priority levels
+    priority_levels = set()
+    compute_priority_levels(elem, BASE_PRIORITY, priority_levels)
+    priority_levels.add(BASE_PRIORITY)
+    sorted_priority_levels = sorted(priority_levels)
+
+    # Hydrate isolates
+    await hydrate_isolates(elem, tokenizer)
+
+    # Binary search logic
+    exclusive_lower_bound = -1
+    inclusive_upper_bound = len(sorted_priority_levels) - 1
+
+    while exclusive_lower_bound < inclusive_upper_bound - 1:
+        candidate_level_index = (exclusive_lower_bound + inclusive_upper_bound) // 2
+        candidate_level = sorted_priority_levels[candidate_level_index]
+        start = time.time() if is_development_environment() else None
+        token_count = -1
+
+        try:
+            prompt = render_with_level_and_early_exit_with_token_estimation(elem, candidate_level, tokenizer, token_limit)
+            token_count = await count_tokens_exact(tokenizer, prompt.get("prompt", ""), options)
+            if token_count + prompt.get("empty_token_count", 0) > token_limit:
+                exclusive_lower_bound = candidate_level_index
+            else:
+                inclusive_upper_bound = candidate_level_index
+        except Exception:
+            exclusive_lower_bound = candidate_level_index
+        finally:
+            if is_development_environment():
+                end = time.time()
+                print(f"Candidate level {candidate_level} took {end - start} ms and has {token_count} tokens")
+
+    # Final rendering
+    final_prompt = render_with_level(elem, sorted_priority_levels[inclusive_upper_bound], tokenizer, True)
+    token_count = await count_tokens_exact(tokenizer, final_prompt.get("prompt", ""), options)
+
+    if token_count + final_prompt.get("empty_token_count", 0) > token_limit:
+        raise ValueError(
+            f"Base prompt estimated token count is {token_count} with {final_prompt.get('empty_token_count', 0)} tokens reserved, which is higher than the limit {token_limit}."
+        )
+
+    duration_ms = (time.time() - start_time) * 1000 if start_time is not None else None
+
+    return {
+        "prompt": final_prompt.get("prompt", ""),
+        "token_count": token_count,
+        "tokens_reserved": final_prompt.get("empty_token_count", 0),
+        "token_limit": token_limit,
+        "tokenizer": tokenizer,
+        "duration_ms": duration_ms,
+        "output_handlers": final_prompt.get("output_handlers", []),
+        "stream_handlers": final_prompt.get("stream_handlers", []),
+        "priority_cutoff": sorted_priority_levels[inclusive_upper_bound],
+    }
+
+
+async def render_backwards_linear_search(elem: PromptElement, options: RenderOptions) -> RenderOutput:
+    start_time = time.time() if is_development_environment() else None
+
+    token_limit = options.get("tokenLimit", MAX_TOKENS.get(options.get("model")))
+    if token_limit is None:
+        raise ValueError("Must specify model or tokenLimit")
+
+    tokenizer = options.get("tokenizer", get_tokenizer_name(options.get("model")))
+    if tokenizer is None:
+        raise ValueError("Must specify model or tokenizer")
+
+    # Validate prompt
+    if is_development_environment():
+        start_time_validating = time.time()
+        validate_unrendered_prompt(elem)
+        print(f"Validating prompt took {time.time() - start_time_validating} ms")
+
+    # Normalize the prompt
+    normalized_elem = normalize_prompt(elem)
+
+    # Compute priority levels
+    priority_levels = set()
+    compute_priority_levels(normalized_elem, BASE_PRIORITY, priority_levels)
+    priority_levels.add(BASE_PRIORITY)
+    sorted_priority_levels = sorted(priority_levels, reverse=True)
+
+    # Render and count tokens
+    prev_prompt = None
+    prev_level = None
+    for level in sorted_priority_levels:
+        this_prompt = await render_with_level_and_count_tokens(normalized_elem, level, tokenizer)
+        if is_chat_prompt(this_prompt["prompt"]):
+            this_prompt["token_count"] += CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT
+
+        if this_prompt["token_count"] + this_prompt["empty_token_count"] > token_limit:
+            break
+
+        prev_prompt = this_prompt
+        prev_level = level
+
+    if prev_prompt is None:
+        raise ValueError(f"Base prompt estimated token count is too high for the limit {token_limit}.")
+
+    # Get the actual token count
+    if prev_prompt["prompt"] is not None:
+        exact_token_count = await count_tokens_exact(tokenizer, prev_prompt["prompt"], options)
+        prev_prompt["tokenCount"] = exact_token_count
+
+    duration_ms = (time.time() - start_time) * 1000 if start_time is not None else None
+
+    return {
+        "prompt": prev_prompt.get("prompt", ""),
+        "token_count": prev_prompt.get("token_count", 0),
+        "tokens_reserved": prev_prompt.get("empty_token_count", 0),
+        "tokenLimit": token_limit,
+        "stream_handlers": prev_prompt.get("stream_handlers", []),
+        "duration_ms": duration_ms,
+        "priority_cutoff": prev_level if prev_level is not None else BASE_PRIORITY,
+    }
+
+
+# Additional types
+@dataclass
+class NormalizedString:
+    type: str
+    s: str
+    cached_count: Optional[int] = None
+
+
+@dataclass
+class NormalizedScope(Scope):
+    children: List["NormalizedNode"]
+
+
+@dataclass
+class NormalizedFirst(First):
+    children: List[NormalizedScope]
+
+
+@dataclass
+class NormalizedChatUserSystemMessage(ChatUserSystemMessage):
+    children: List["NormalizedNode"]
+
+
+@dataclass
+class NormalizedChatAssistantMessage(ChatAssistantMessage):
+    children: List["NormalizedNode"]
+
+
+@dataclass
+class NormalizedChatFunctionResultMessage(ChatFunctionResultMessage):
+    children: List["NormalizedNode"]
+
+
+@dataclass
+class NormalizedFunctionDefinition(FunctionDefinition):
+    cached_count: Optional[int] = None
+
+
+# Union type for NormalizedChatMessage
+NormalizedChatMessage = Union[NormalizedChatUserSystemMessage, NormalizedChatAssistantMessage, NormalizedChatFunctionResultMessage]
+
+# Union type for NormalizedNode
+NormalizedNode = Union[
+    NormalizedFirst,
+    NormalizedScope,
+    BreakToken,
+    Empty,
+    Isolate,
+    Capture,
+    NormalizedChatMessage,
+    NormalizedString,
+    NormalizedFunctionDefinition,
+]
+
+
+# Function to normalize prompt
+def normalize_prompt(elem: PromptElement) -> List[NormalizedNode]:
+    result: List[NormalizedNode] = []
+    current_string: str = ""
+    elem_array = elem if isinstance(elem, list) else [elem]
+
+    def push_current_string():
+        nonlocal current_string
+        if current_string:
+            result.append(NormalizedString(type="normalized_string", s=current_string))
+            current_string = ""
+
+    for node in elem_array:
+        if node is None:
+            continue
+        if isinstance(node, str) or isinstance(node, (int, float, bool)):
+            current_string += str(node)
+        elif isinstance(node, dict):
+            push_current_string()
+            if node["type"] in ["capture", "isolate", "breaktoken", "empty"]:
+                result.append(node)
+            elif node["type"] == "function_definition":
+                result.append(NormalizedFunctionDefinition(**node, cached_count=None))
+            elif node["type"] == "first":
+                result.append(NormalizedFirst(**node, children=normalize_prompt(node["children"])))
+            elif node["type"] in ["chat", "scope"]:
+                result.append(type(node)(**node, children=normalize_prompt(node["children"])))
+            else:
+                raise ValueError("Invalid prompt element")
+        else:
+            raise ValueError("Invalid prompt element")
+    push_current_string()
+    return result
+
+
+async def render_with_level_and_count_tokens(elem: PromptElement, level: int, tokenizer: str) -> RenderedPrompt:
+    if isinstance(elem, list):
+        results = await asyncio.gather(*[render_with_level_and_count_tokens(e, level, tokenizer) for e in elem])
+        return {
+            "prompt": sum_prompts(*[r["prompt"] for r in results]),
+            "token_count": sum(r["token_count"] for r in results),
+            "empty_token_count": sum(r["empty_token_count"] for r in results),
+            "output_handlers": [handler for r in results for handler in r["output_handlers"]],
+            "stream_handlers": [handler for r in results for handler in r["stream_handlers"]],
+        }
+
+    match elem.type:
+        case "first":
+            for child in elem.children:
+                if child.absolute_priority is None:
+                    raise ValueError("compute_priority_levels should have set absolute_priority for all children of first")
+                if child.absolute_priority >= level:
+                    return await render_with_level_and_count_tokens(child, level, tokenizer)
+            return {"prompt": None, "token_count": 0, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+        case "capture":
+            return {
+                "prompt": None,
+                "token_count": 0,
+                "empty_token_count": 0,
+                "output_handlers": [elem.on_output] if elem.on_output else [],
+                "stream_handlers": [elem.on_stream] if elem.on_stream else [],
+            }
+
+        case "breaktoken":
+            return {"prompt": ["", ""], "token_count": 0, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+        case "empty":
+            return {"prompt": None, "token_count": 0, "empty_token_count": elem.token_count, "output_handlers": [], "stream_handlers": []}
+
+        case "function_definition":
+            if elem.cached_count is None:
+                elem.cached_count = await count_function_tokens(elem, tokenizer)
+            prompt = {
+                "type": "text",
+                "text": "",
+                "functions": [
+                    {
+                        "name": elem.name,
+                        "description": elem.description,
+                        "parameters": elem.parameters,
+                    }
+                ],
+            }
+            return {
+                "prompt": prompt,
+                "token_count": elem.cached_count,
+                "empty_token_count": 0,
+                "output_handlers": [],
+                "stream_handlers": [],
+            }
+
+        case "isolate":
+            if elem.cached_render_output is None:
+                elem.cached_render_output = await render(
+                    elem.children,
+                    {
+                        "tokenizer": tokenizer,
+                        "token_limit": elem.token_limit,
+                    },
+                )
+            return {
+                "prompt": elem.cached_render_output.prompt,
+                "token_count": elem.cached_render_output.token_count,
+                "empty_token_count": elem.cached_render_output.tokens_reserved,
+                "output_handlers": elem.cached_render_output.output_handlers,
+                "stream_handlers": elem.cached_render_output.stream_handlers,
+            }
+
+        case "chat":
+            p = await render_with_level_and_count_tokens(elem.children, level, tokenizer)
+            if is_chat_prompt(p["prompt"]):
+                raise ValueError("Incorrect prompt: nested chat messages are not allowed")
+
+            extra_token_count = 0
+            message = {"role": elem.role, "name": elem.name, "content": ""}
+            if elem.role in ["user", "system"]:
+                message["content"] = p["prompt"] if is_plain_prompt(p["prompt"]) else (p["prompt"]["text"] if p["prompt"] else "")
+            elif elem.role == "assistant":
+                message["content"] = p["prompt"] if is_plain_prompt(p["prompt"]) else (p["prompt"]["text"] if p["prompt"] else "")
+                if elem.function_call:
+                    message["function_call"] = elem.function_call
+                    extra_token_count += await count_function_call_message_tokens(elem.function_call, tokenizer)
+            elif elem.role == "function":
+                message["content"] = p["prompt"] if is_plain_prompt(p["prompt"]) else (p["prompt"]["text"] if p["prompt"] else "")
+                extra_token_count += await num_tokens(elem.name, {"tokenizer": tokenizer})
+
+            return {
+                "prompt": {"type": "chat", "messages": [message], "functions": prompt_has_functions(p["prompt"]) if p["prompt"] else None},
+                "token_count": p["token_count"] + CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR + extra_token_count,
+                "empty_token_count": p["empty_token_count"],
+                "output_handlers": p["output_handlers"],
+                "stream_handlers": p["stream_handlers"],
+            }
+
+        case "normalizedString":
+            if elem.cached_count is None:
+                elem.cached_count = await num_tokens(elem.s, {"tokenizer": tokenizer})
+            return {
+                "prompt": elem.s,
+                "token_count": elem.cached_count,
+                "empty_token_count": 0,
+                "output_handlers": [],
+                "stream_handlers": [],
+            }
+
+        case "scope":
+            if elem.absolute_priority is None:
+                raise ValueError("compute_priority_levels should have set absolute_priority for all scopes")
+            if elem.absolute_priority >= level:
+                return await render_with_level_and_count_tokens(elem.children, level, tokenizer)
+            return {"prompt": None, "token_count": 0, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+    return {"prompt": None, "token_count": 0, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
