@@ -30,6 +30,14 @@ from prompt_types import (
     BreakToken,
 )
 from typing import List
+from openai_helper import (
+    CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT,
+    CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR,
+    MAX_TOKENS,
+    usable_tokenizers,
+    is_usable_language_model,
+    usable_language_models,
+)
 
 
 # Type Checking Functions
@@ -240,3 +248,21 @@ def Fragment(children: List[PromptElement]) -> PromptElement:
 
 # BASE_PRIORITY constant
 BASE_PRIORITY = 1e9
+
+
+async def render(elem: PromptElement, options: RenderOptions) -> RenderOutput:
+    """
+    Render a PromptElement into a RenderOutput object.
+
+    Args:
+    elem (PromptElement): The PromptElement to render.
+    options (RenderOptions): The RenderOptions object to use.
+
+    Returns:
+    RenderOutput: The RenderOutput object.
+    """
+    return render_binary_search(elem, options)
+
+
+def render_binary_search():
+    return
