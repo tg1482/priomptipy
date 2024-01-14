@@ -1,13 +1,16 @@
 from typing import Generic, TypeVar, List, Optional, Dict, Union
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 class OutputCatcher(Generic[T]):
     def __init__(self):
         self.outputs: List[Dict[str, Union[T, Optional[int]]]] = []
         self.no_priority_outputs: List[Dict[str, Union[T, None]]] = []
 
-    async def on_output(self, output: T, options: Optional[Dict[str, int]] = None) -> None:
+    async def on_output(
+        self, output: T, options: Optional[Dict[str, int]] = None
+    ) -> None:
         """
         Adds an output to the OutputCatcher object.
 
@@ -22,23 +25,24 @@ class OutputCatcher(Generic[T]):
         Returns:
         None
         """
-        if options and 'p' in options:
-            self.outputs.append({'output': output, 'priority': options['p']})
-            self.outputs.sort(key=lambda x: x['priority'], reverse=True)
+        if options and "p" in options:
+            self.outputs.append({"output": output, "priority": options["p"]})
+            self.outputs.sort(key=lambda x: x["priority"], reverse=True)
         else:
-            self.no_priority_outputs.append({'output': output, 'priority': None})
+            self.no_priority_outputs.append({"output": output, "priority": None})
 
     def get_outputs(self) -> List[T]:
         combined_outputs = self.outputs + self.no_priority_outputs
-        return [o['output'] for o in combined_outputs]
+        return [o["output"] for o in combined_outputs]
 
     def get_output(self) -> Optional[T]:
         if len(self.outputs) > 0:
-            return self.outputs[0]['output']
+            return self.outputs[0]["output"]
         elif len(self.no_priority_outputs) > 0:
-            return self.no_priority_outputs[0]['output']
+            return self.no_priority_outputs[0]["output"]
         else:
             return None
+
 
 # Usage example
 # output_catcher = OutputCatcher[str]()
