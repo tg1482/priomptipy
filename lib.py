@@ -1,6 +1,6 @@
 import os
 import time
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Set
 from dataclasses import dataclass
 import asyncio
 from prompt_types import (
@@ -817,27 +817,26 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
             if is_chat_prompt(child_results["prompt"]):
                 raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
 
-            # Construct the chat message based on the role and content
-            message_content = (
-                child_results["prompt"]
-                if is_plain_prompt(child_results["prompt"])
-                else child_results["prompt"]["text"]
-                if child_results["prompt"]
-                else ""
-            )
-            message = {"role": elem.role, "name": getattr(elem, "name", None), "content": message_content}
+            # Construct the chat message based on the role
+            content = child_results["prompt"] if is_plain_prompt(child_results["prompt"]) else child_results["prompt"].get("text", "")
 
-            if elem.role == "assistant" and getattr(elem, "function_call", None):
-                message["function_call"] = elem.function_call
+            if elem.role in ["user", "system", "function"]:
+                message = {"role": elem.role, "name": getattr(elem, "name", None), "content": content}
+            elif elem.role == "assistant":
+                message = {"role": elem.role, "content": content, "function_call": getattr(elem, "function_call", None)}
+            else:
+                raise ValueError(f"Invalid role {elem.role}")
 
             return {
-                "prompt": {"type": "chat", "messages": [message]},
+                "prompt": {
+                    "type": "chat",
+                    "messages": [message],
+                    "functions": prompt_has_functions(child_results["prompt"]) if child_results["prompt"] else None,
+                },
                 "empty_token_count": child_results["empty_token_count"],
                 "output_handlers": child_results["output_handlers"],
                 "stream_handlers": child_results["stream_handlers"],
             }
-
-        # Not fully well defined and converted yet
 
         case "scope":
             if elem.absolute_priority is None:
@@ -851,5 +850,149 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
             return {"prompt": None, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
 
 
-# Helper functions like sum_prompts, recursively_eject, create_chat_message, etc.
-# should be implemented based on your application's logic.
+def validate_unrendered_prompt(elem: PromptElement):
+    validate_no_children_higher_priority_than_parent(elem)
+    validate_not_both_absolute_and_relative_priority(elem)
+
+
+def validate_not_both_absolute_and_relative_priority(elem: PromptElement):
+    if isinstance(elem, list):
+        for child in elem:
+            validate_not_both_absolute_and_relative_priority(child)
+        return
+
+    if elem is None or elem is False:
+        return
+
+    if isinstance(elem, (str, int)):
+        return
+
+    match elem.type:
+        case "chat" | "isolate" | "first":
+            for child in elem.children:
+                validate_not_both_absolute_and_relative_priority(child)
+
+        case "scope":
+            if hasattr(elem, "absolute_priority") and hasattr(elem, "relative_priority"):
+                print("WARNING: Scope has both absolute and relative priority. Ignoring relative priority.")
+            for child in elem.children:
+                validate_not_both_absolute_and_relative_priority(child)
+
+        case "capture" | "breaktoken" | "functionDefinition" | "empty":
+            return
+
+
+def validate_no_children_higher_priority_than_parent(elem: PromptElement, parent_priority: int = BASE_PRIORITY):
+    if isinstance(elem, list):
+        for child in elem:
+            validate_no_children_higher_priority_than_parent(child, parent_priority)
+        return
+
+    if elem is None or elem is False:
+        return
+
+    if isinstance(elem, (str, int)):
+        return
+
+    match elem.type:
+        case "chat" | "first":
+            for child in elem.children:
+                validate_no_children_higher_priority_than_parent(child, parent_priority)
+
+        case "isolate":
+            validate_no_children_higher_priority_than_parent(elem.children)
+
+        case "scope":
+            priority = compute_priority(elem, parent_priority)
+            if priority > parent_priority:
+                print(f"WARNING: Child scope has a higher priority ({priority}) than its parent ({parent_priority}). This is discouraged.")
+            for child in elem.children:
+                validate_no_children_higher_priority_than_parent(child, priority)
+
+        case "capture" | "breaktoken" | "functionDefinition" | "empty":
+            return
+
+
+def compute_priority(elem: Union["Scope", "NormalizedScope"], parent_priority: int) -> int:
+    absolute_priority = getattr(elem, "absolute_priority", None)
+    relative_priority = getattr(elem, "relative_priority", 0)
+
+    # If absolute_priority is defined, use it; otherwise, calculate it
+    return absolute_priority if absolute_priority is not None else parent_priority + relative_priority
+
+
+def compute_priority_levels(elem: Union["AnyNode", List["AnyNode"]], parent_priority: int, levels: Set[int]):
+    if isinstance(elem, list):
+        for child in elem:
+            compute_priority_levels(child, parent_priority, levels)
+        return
+
+    if elem is None or elem is False:
+        return
+
+    if isinstance(elem, (str, int)):
+        return
+
+    match elem.type:
+        case "chat" | "first":
+            for child in elem.children:
+                compute_priority_levels(child, parent_priority, levels)
+
+        case "capture" | "function_definition" | "breaktoken" | "empty" | "normalized_string":
+            return
+
+        case "isolate":
+            return
+
+        case "scope":
+            priority = compute_priority(elem, parent_priority)
+            levels.add(priority)
+            elem.absolute_priority = priority
+            for child in elem.children:
+                compute_priority_levels(child, priority, levels)
+
+        case _:
+            print(f"ELEM: {elem}")
+            raise ValueError(f"BUG!! compute_priority_levels got an invalid node of type {type(elem)}")
+
+
+AnyNode = Union["Node", "NormalizedScope"]
+
+
+async def num_tokens_prompt_string(prompt_string: PromptString, tokenizer: str) -> int:
+    if isinstance(prompt_string, list):
+        token_counts = await asyncio.gather(*(num_tokens(s, tokenizer=tokenizer) for s in prompt_string))
+        return sum(token_counts)
+    return await num_tokens(prompt_string, tokenizer=tokenizer)
+
+
+async def count_tokens_exact(tokenizer, prompt, options):
+    tokens = 0
+    if is_plain_prompt(prompt):
+        tokens += await num_tokens_prompt_string(prompt, tokenizer)
+    elif is_chat_prompt(prompt):
+        msg_tokens = await asyncio.gather(*(count_message_tokens(msg, tokenizer) for msg in prompt.messages))
+        extra_token_count = CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR * len(prompt.messages) + CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT
+        tokens += sum(msg_tokens) + extra_token_count
+        if options.get("last_message_is_incomplete", False):
+            tokens -= CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT + 1
+    else:
+        tokens += await num_tokens_prompt_string(prompt.text, tokenizer)
+
+    if prompt_has_functions(prompt):
+        function_tokens = await asyncio.gather(*(count_function_tokens(func, tokenizer) + 2 for func in prompt.functions))
+        tokens += sum(function_tokens)
+
+    return tokens
+
+
+def prompt_to_openai_chat_request(prompt: RenderedPrompt):
+    functions = prompt.functions if prompt_has_functions(prompt) else None
+    messages = prompt_to_openai_chat_messages(prompt)
+    return {"messages": messages, "functions": functions}
+
+
+CL100K_SYSTEM_TOKENS = [100264, 9125, 100266]
+CL100K_USER_TOKENS = [100264, 882, 100266]
+CL100K_ASSISTANT_TOKENS = [100264, 78191, 100266]
+CL100K_END_TOKEN = [100265]
