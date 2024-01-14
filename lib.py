@@ -619,3 +619,237 @@ async def render_with_level_and_count_tokens(elem: PromptElement, level: int, to
             return {"prompt": None, "token_count": 0, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
 
     return {"prompt": None, "token_count": 0, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+
+def render_with_level_and_early_exit_with_token_estimation(
+    elem: PromptElement, level: int, tokenizer: str, token_limit: int
+) -> RenderedPrompt:
+    if elem is None or elem is False:
+        return {"prompt": None, "empty_token_count": 0}
+
+    if isinstance(elem, list):
+        results = [render_with_level_and_early_exit_with_token_estimation(e, level, tokenizer, token_limit) for e in elem]
+        prompt_sum = sum_prompts(*[r["prompt"] for r in results])
+        lower_bound = estimate_lower_bound_tokens_for_prompt(prompt_sum, tokenizer)
+        if lower_bound > token_limit:
+            raise ValueError("Token limit exceeded!")
+        return {"prompt": prompt_sum, "empty_token_count": sum(r["empty_token_count"] for r in results)}
+
+    if isinstance(elem, str) or isinstance(elem, (int, float)):
+        return {"prompt": str(elem), "empty_token_count": 0}
+
+    match elem.type:
+        case "first":
+            for child in elem.children:
+                if child.absolute_priority is None:
+                    raise ValueError("compute_priority_levels should have set absolute_priority for all children of first")
+                if child.absolute_priority >= level:
+                    return render_with_level_and_early_exit_with_token_estimation(child, level, tokenizer, token_limit)
+            return {"prompt": None, "empty_token_count": 0}
+
+        case "capture":
+            return {"prompt": None, "empty_token_count": 0}
+
+        case "breaktoken":
+            return {"prompt": ["", ""], "empty_token_count": 0}
+
+        case "empty":
+            return {"prompt": None, "empty_token_count": elem.token_count}
+
+        case "function_definition":
+            prompt = {
+                "type": "text",
+                "text": "",
+                "functions": [
+                    {
+                        "name": elem.name,
+                        "description": elem.description,
+                        "parameters": elem.parameters,
+                    }
+                ],
+            }
+            return {"prompt": prompt, "empty_token_count": 0}
+
+        case "isolate":
+            if elem.cached_render_output is None:
+                raise ValueError("Isolates should have been hydrated before calling render_with_level_and_early_exit_with_token_estimation")
+            return {
+                "prompt": elem.cached_render_output.prompt,
+                "empty_token_count": elem.cached_render_output.tokens_reserved,
+            }
+
+        case "chat":
+            p = render_with_level_and_early_exit_with_token_estimation(elem.children, level, tokenizer, token_limit)
+            if is_chat_prompt(p["prompt"]):
+                raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
+
+            message = create_chat_message(elem, p["prompt"])
+            return {
+                "prompt": {"type": "chat", "messages": [message], "functions": prompt_has_functions(p["prompt"]) if p["prompt"] else None},
+                "empty_token_count": p["empty_token_count"],
+            }
+
+        case "scope":
+            if elem.absolute_priority is None:
+                raise ValueError("compute_priority_levels should have set absolute_priority for all scopes")
+            if elem.absolute_priority >= level:
+                return render_with_level_and_early_exit_with_token_estimation(elem.children, level, tokenizer, token_limit)
+            return {"prompt": None, "empty_token_count": 0}
+
+
+def recursively_eject(elem: PromptElement):
+    if elem is None or isinstance(elem, (str, int, float, bool)):
+        return
+
+    if isinstance(elem, list):
+        for e in elem:
+            recursively_eject(e)
+    else:
+        if hasattr(elem, "on_eject") and callable(elem.on_eject):
+            elem.on_eject()
+
+        if hasattr(elem, "children") and isinstance(elem.children, list):
+            for child in elem.children:
+                recursively_eject(child)
+
+
+async def hydrate_isolates(elem: PromptElement, tokenizer: str) -> None:
+    if elem is None or isinstance(elem, (str, int, float, bool)):
+        return
+
+    if isinstance(elem, list):
+        tasks = [hydrate_isolates(e, tokenizer) for e in elem]
+        # Run tasks concurrently and wait for them to finish
+        await asyncio.gather(*tasks)
+        return
+
+    match elem.type:
+        case "first":
+            await hydrate_isolates(elem.children, tokenizer)
+
+        case "capture" | "empty" | "breaktoken" | "function_definition":
+            return
+
+        case "isolate":
+            if elem.cached_render_output is None:
+                elem.cached_render_output = await render(
+                    elem.children,
+                    {
+                        "tokenizer": tokenizer,
+                        "token_limit": elem.token_limit,
+                    },
+                )
+
+        case "chat" | "scope":
+            await hydrate_isolates(elem.children, tokenizer)
+
+
+def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
+    if elem is None or elem is False:
+        return {"prompt": None, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+    if isinstance(elem, list):
+        results = [render_with_level(e, level, tokenizer, call_ejected_callback) for e in elem]
+        prompt_sum = sum_prompts(*[r["prompt"] for r in results])
+        return {
+            "prompt": prompt_sum,
+            "empty_token_count": sum(r["empty_token_count"] for r in results),
+            "output_handlers": [handler for r in results for handler in r["output_handlers"]],
+            "stream_handlers": [handler for r in results for handler in r["stream_handlers"]],
+        }
+
+    if isinstance(elem, (str, int)):
+        return {"prompt": str(elem), "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+    match elem.type:
+        case "first":
+            for child in elem.children:
+                if child.absolute_priority is None:
+                    raise ValueError("compute_priority_levels should have set absolute_priority for all children of first")
+                if child.absolute_priority >= level:
+                    if hasattr(elem, "on_include") and callable(elem.on_include):
+                        elem.on_include()
+                    return render_with_level(child, level, tokenizer, call_ejected_callback)
+                elif call_ejected_callback:
+                    recursively_eject(child)
+            return {"prompt": None, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+        case "capture":
+            return {
+                "prompt": None,
+                "empty_token_count": 0,
+                "output_handlers": [elem.on_output] if hasattr(elem, "on_output") and callable(elem.on_output) else [],
+                "stream_handlers": [elem.on_stream] if hasattr(elem, "on_stream") and callable(elem.on_stream) else [],
+            }
+
+        case "breaktoken":
+            return {"prompt": ["", ""], "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+        case "empty":
+            return {"prompt": None, "empty_token_count": elem.token_count, "output_handlers": [], "stream_handlers": []}
+
+        case "functionDefinition":
+            prompt = {
+                "type": "text",
+                "text": "",
+                "functions": [
+                    {
+                        "name": elem.name,
+                        "description": elem.description,
+                        "parameters": elem.parameters,
+                    }
+                ],
+            }
+            return {"prompt": prompt, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+        case "isolate":
+            if elem.cached_render_output is None:
+                raise ValueError("Isolates should have been hydrated before calling render_with_level")
+            return {
+                "prompt": elem.cached_render_output.prompt,
+                "empty_token_count": elem.cached_render_output.tokens_reserved,
+                "output_handlers": elem.cached_render_output.output_handlers,
+                "stream_handlers": elem.cached_render_output.stream_handlers,
+            }
+
+        case "chat":
+            child_results = render_with_level(elem.children, level, tokenizer, call_ejected_callback)
+            if is_chat_prompt(child_results["prompt"]):
+                raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
+
+            # Construct the chat message based on the role and content
+            message_content = (
+                child_results["prompt"]
+                if is_plain_prompt(child_results["prompt"])
+                else child_results["prompt"]["text"]
+                if child_results["prompt"]
+                else ""
+            )
+            message = {"role": elem.role, "name": getattr(elem, "name", None), "content": message_content}
+
+            if elem.role == "assistant" and getattr(elem, "function_call", None):
+                message["function_call"] = elem.function_call
+
+            return {
+                "prompt": {"type": "chat", "messages": [message]},
+                "empty_token_count": child_results["empty_token_count"],
+                "output_handlers": child_results["output_handlers"],
+                "stream_handlers": child_results["stream_handlers"],
+            }
+
+        # Not fully well defined and converted yet
+
+        case "scope":
+            if elem.absolute_priority is None:
+                raise ValueError("compute_priority_levels should have set absolute_priority for all scopes")
+            if elem.absolute_priority >= level:
+                if hasattr(elem, "on_include") and callable(elem.on_include):
+                    elem.on_include()
+                return render_with_level(elem.children, level, tokenizer, call_ejected_callback)
+            elif call_ejected_callback:
+                recursively_eject(elem)
+            return {"prompt": None, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
+
+
+# Helper functions like sum_prompts, recursively_eject, create_chat_message, etc.
+# should be implemented based on your application's logic.
