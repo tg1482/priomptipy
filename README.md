@@ -1,6 +1,6 @@
 # PriomptiPy
 
-Priomptipy (priority + prompt + python) is a python-based prompting library. It uses priorities to decide what to include in the context window. This is a python version of Priompt, which was generously open-sourced by Anysphere's team.
+Priomptipy (priority + prompt + python) is a python-based prompting library. It uses priorities to decide what to include in the context window. This is a python version of [Priompt](https://github.com/anysphere/priompt), which was generously open-sourced by Anysphere's team.
 
 # Installation
 
