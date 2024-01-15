@@ -4,89 +4,15 @@ from prompt_types import ChatUserSystemMessage, ChatAssistantMessage
 from typing import List, Optional, Any
 
 
-# @dataclass
-# class SystemMessage:
-#     type: str = "chat"
-#     role: str = "system"
-#     name: Optional[str] = None
-#     children: List[Any] = field(default_factory=list)
-
-#     def __post_init__(self):
-#         self.children = flatten(self.children) if self.children is not None else []
-
-
-# @dataclass
-# class UserMessage:
-#     type: str = "chat"
-#     role: str = "user"
-#     name: Optional[str] = None
-#     children: List[Any] = field(default_factory=list)
-
-#     def __post_init__(self):
-#         self.children = flatten(self.children) if self.children is not None else []
-
-
-# @dataclass
-# class AssistantMessage:
-#     type: str = "chat"
-#     role: str = "assistant"
-#     function_call: Optional[Any] = None
-#     children: List[Any] = field(default_factory=list)
-
-#     def __post_init__(self):
-#         self.children = flatten(self.children) if self.children is not None else []
-
-
-# @dataclass
-# class FunctionMessage:
-#     name: str
-#     type: str = "chat"
-#     role: str = "function"
-#     children: List[Any] = field(default_factory=list)
-
-#     def __post_init__(self):
-#         self.children = flatten(self.children) if self.children is not None else []
-
-
-# @dataclass
-# class Function:
-#     name: str
-#     description: str
-#     parameters: List[Any]
-#     on_call: Optional[callable] = None
-
-#     def __post_init__(self):
-#         if not valid_function_name(self.name):
-#             raise ValueError(f"Invalid function name: {self.name}.")
-
-#     async def handle_output(self, output: dict):
-#         if (
-#             self.on_call is not None
-#             and "function_call" in output
-#             and output["function_call"]["name"] == self.name
-#             and "arguments" in output["function_call"]
-#         ):
-#             arguments = output["function_call"]["arguments"]
-#             await self.on_call(*arguments)
-
-
 def SystemMessage(children=None, name=None):
-    # return {"type": "chat", "role": "system", "name": name, "children": flatten(children) if children is not None else []}
     return ChatUserSystemMessage(type="chat", role="system", name=name, children=flatten(children) if children is not None else [])
 
 
 def UserMessage(children=None, name=None):
-    # return {"type": "chat", "role": "user", "name": name, "children": flatten(children) if children is not None else []}
     return ChatUserSystemMessage(type="chat", role="user", name=name, children=flatten(children) if children is not None else [])
 
 
-def assistant_message(function_call=None, children=None):
-    # return {
-    #     "type": "chat",
-    #     "role": "assistant",
-    #     "function_call": function_call,
-    #     "children": flatten(children) if children is not None else [],
-    # }
+def AssistantMessage(children=None, function_call=None, name=None):
     return ChatAssistantMessage(
         type="chat", role="assistant", function_call=function_call, children=flatten(children) if children is not None else []
     )

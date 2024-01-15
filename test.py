@@ -1,13 +1,6 @@
 import pytest
-from components import SystemMessage, UserMessage
+from components import SystemMessage, UserMessage, AssistantMessage
 from prompt_types import (
-    ChatPrompt,
-    ChatPromptUserSystemMessage,
-    ChatPromptAssistantMessage,
-    ChatPromptFunctionResultMessage,
-    FunctionPrompt,
-    ChatAndFunctionPromptFunction,
-    ChatUserSystemMessage,
     PromptProps,
     PromptElement,
 )
@@ -30,19 +23,16 @@ async def test_prompt_to_tokens():
         prompt_elements = []
 
         # Adding system message with optional break tokens
-        system_message_content = [
-            "This is the start of the prompt.",
-            "This is the second part of the prompt.",
-            "This is the third part of the prompt.",
-            "This is the fourth part of the prompt.",
-            "This is the fifth part of the prompt.",
-        ]
+        system_message_content = "This is the start of the prompt."
         print(SystemMessage(system_message_content))
         prompt_elements.append(SystemMessage(system_message_content))
 
         # Adding user message
         user_message_content = "hi!"
         prompt_elements.append(UserMessage(user_message_content))
+
+        assistant_message_content = "Hello!"
+        prompt_elements.append(AssistantMessage(assistant_message_content))
 
         return prompt_elements
 

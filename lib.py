@@ -64,7 +64,7 @@ def is_text_prompt_potentially_with_functions(prompt) -> bool:
 
 
 def prompt_has_functions(prompt) -> bool:
-    return isinstance(prompt, dict) and "functions" in prompt and prompt["functions"] is not None
+    return isinstance(prompt, dict) and "functions" in prompt and prompt["functions"] is not None and prompt["functions"] != False
 
 
 # Utility Functions
@@ -799,7 +799,7 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
         case "empty":
             return {"prompt": None, "empty_token_count": elem.token_count, "output_handlers": [], "stream_handlers": []}
 
-        case "functionDefinition":
+        case "function_definition":
             prompt = {
                 "type": "text",
                 "text": "",
@@ -1089,8 +1089,8 @@ async def count_message_tokens(message: ChatPromptMessage, tokenizer):
         name_tokens = await num_tokens(message.get("name"), tokenizer=tokenizer)
         content_tokens = await num_tokens_prompt_string(message.content, tokenizer=tokenizer)
         return name_tokens + content_tokens + 2
-    elif message.get("role") == "assistant" and message.get("functionCall") is not None:
-        function_call_tokens = await count_function_call_message_tokens(message.get("functionCall"), tokenizer=tokenizer)
+    elif message.get("role") == "assistant" and message.get("function_call") is not None:
+        function_call_tokens = await count_function_call_message_tokens(message.get("function_call"), tokenizer=tokenizer)
         content_tokens = (
             await num_tokens_prompt_string(message.get("content"), tokenizer=tokenizer) if message.get("content") is not None else 0
         )
