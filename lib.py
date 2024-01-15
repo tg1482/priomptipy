@@ -709,13 +709,6 @@ def render_with_level_and_early_exit_with_token_estimation(
             if is_chat_prompt(p["prompt"]):
                 raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
 
-            # message = ChatPromptMessage(role=elem.role, name=elem.name, content="")
-            # if elem.role in ["user", "system"]:
-            #     message = ChatPromptUserSystemMessage(role=elem.role, name=elem.name, content=p["prompt"])
-            # elif elem.role == "assistant":
-            #     message = ChatPromptAssistantMessage(role=elem.role, content=p["prompt"])
-            #     if elem.function_call:
-            #         message.function_call = elem.function_call
             if elem.role in ["user", "system"]:
                 message = {"role": elem.role, "name": elem.name, "content": p["prompt"]}
             elif elem.role == "assistant":
@@ -866,14 +859,26 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
             if is_chat_prompt(child_results["prompt"]):
                 raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
             # Construct the chat message based on the role
-            content = child_results["prompt"] if is_plain_prompt(child_results["prompt"]) else child_results["prompt"].get("text", "")
-
-            if elem.role in ["user", "system", "function"]:
-                message = {"role": elem.role, "name": getattr(elem, "name", None), "content": content}
+            message = {}
+            if elem.role in ["user", "system"]:
+                message = {
+                    "role": elem.role,
+                    "name": elem.name,
+                    "content": prompt_get_text(child_results["prompt"]) if child_results["prompt"] else "",
+                }
             elif elem.role == "assistant":
-                message = {"role": elem.role, "content": content, "function_call": getattr(elem, "function_call", None)}
-            else:
-                raise ValueError(f"Invalid role {elem.role}")
+                message = {
+                    "role": elem.role,
+                    "content": prompt_get_text(child_results["prompt"]) if child_results["prompt"] else "",
+                }
+                if hasattr(elem, "function_call") and elem.function_call is not None:
+                    message["function_call"] = elem.function_call
+            elif elem.role == "function":
+                message = {
+                    "role": elem.role,
+                    "name": elem.name,
+                    "content": prompt_get_text(child_results["prompt"]) if child_results["prompt"] else "",
+                }
 
             return {
                 "prompt": {

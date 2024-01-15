@@ -96,7 +96,7 @@ async def test_multi_message_content_to_tokens():
             "messages": [
                 {"role": "system", "name": None, "content": "Testing to see if this works"},
                 {"role": "user", "name": None, "content": "Oh mah gawh"},
-                {"role": "assistant", "content": "Betty look at that cahh", "function_call": None},
+                {"role": "assistant", "content": "Betty look at that cahh"},
             ],
         },
         "token_count": 30,
@@ -214,25 +214,9 @@ async def test_all_messages():
 
     # Check if the messages are correctly rendered
     expected_messages = [
-        {
-            "role": "system",
-            "content": "System message",
-        },
-        {
-            "role": "user",
-            "content": "User message",
-        },
-        {
-            "role": "assistant",
-            "function_call": {
-                "name": "echo",
-                "arguments": '{"message": "this is a test echo"}',
-            },
-        },
-        {
-            "role": "function",
-            "name": "echo",
-            "content": "this is a test echo",
-        },
+        {"role": "system", "name": None, "content": "System message"},
+        {"role": "user", "name": None, "content": "User message"},
+        {"role": "assistant", "content": "", "function_call": {"name": "echo", "arguments": '{"message": "this is a test echo"}'}},
+        {"role": "function", "name": "echo", "content": "this is a test echo"},
     ]
     assert rendered["prompt"]["messages"] == expected_messages, "The messages are not as expected"
