@@ -20,6 +20,8 @@ from prompt_types import (
     TextPrompt,
     ChatAndFunctionPromptFunction,
     ChatPromptMessage,
+    ChatPromptUserSystemMessage,
+    ChatPromptAssistantMessage,
     ChatUserSystemMessage,
     ChatAssistantMessage,
     ChatFunctionResultMessage,
@@ -298,6 +300,7 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
     compute_priority_levels(elem, BASE_PRIORITY, priority_levels)
     priority_levels.add(BASE_PRIORITY)
     sorted_priority_levels = sorted(priority_levels)
+    print(f"Priority levels: {sorted_priority_levels}")
 
     # Hydrate isolates
     await hydrate_isolates(elem, tokenizer)
@@ -319,12 +322,14 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
                 exclusive_lower_bound = candidate_level_index
             else:
                 inclusive_upper_bound = candidate_level_index
-        except Exception:
+        except Exception as e:
             exclusive_lower_bound = candidate_level_index
         finally:
             if is_development_environment():
                 end = time.time()
                 print(f"Candidate level {candidate_level} took {end - start} ms and has {token_count} tokens")
+
+    print(f"Final priority level: {sorted_priority_levels[inclusive_upper_bound]}")
 
     # Final rendering
     final_prompt = render_with_level(elem, sorted_priority_levels[inclusive_upper_bound], tokenizer, True)
@@ -503,14 +508,24 @@ def normalize_prompt(elem: PromptElement) -> List[NormalizedNode]:
 
 async def render_with_level_and_count_tokens(elem: PromptElement, level: int, tokenizer: str) -> RenderedPrompt:
     if isinstance(elem, list):
-        results = await asyncio.gather(*[render_with_level_and_count_tokens(e, level, tokenizer) for e in elem])
-        return {
-            "prompt": sum_prompts(*[r["prompt"] for r in results]),
-            "token_count": sum(r["token_count"] for r in results),
-            "empty_token_count": sum(r["empty_token_count"] for r in results),
-            "output_handlers": [handler for r in results for handler in r["output_handlers"]],
-            "stream_handlers": [handler for r in results for handler in r["stream_handlers"]],
+        accumulated_result = {
+            "prompt": None,
+            "token_count": 0,
+            "empty_token_count": 0,
+            "output_handlers": [],
+            "stream_handlers": [],
         }
+        results = await asyncio.gather(*[render_with_level_and_count_tokens(e, level, tokenizer) for e in elem])
+        for r in results:
+            accumulated_result = {
+                "prompt": sum_prompts(accumulated_result["prompt"], r["prompt"]),
+                "token_count": accumulated_result["token_count"] + r["token_count"],
+                "empty_token_count": accumulated_result["empty_token_count"] + r["empty_token_count"],
+                "output_handlers": accumulated_result["output_handlers"] + r["output_handlers"],
+                "stream_handlers": accumulated_result["stream_handlers"] + r["stream_handlers"],
+            }
+
+        return accumulated_result
 
     match elem.type:
         case "first":
@@ -629,12 +644,22 @@ def render_with_level_and_early_exit_with_token_estimation(
         return {"prompt": None, "empty_token_count": 0}
 
     if isinstance(elem, list):
-        results = [render_with_level_and_early_exit_with_token_estimation(e, level, tokenizer, token_limit) for e in elem]
-        prompt_sum = sum_prompts(*[r["prompt"] for r in results])
-        lower_bound = estimate_lower_bound_tokens_for_prompt(prompt_sum, tokenizer)
+        accumulated_result = {
+            "prompt": None,
+            "empty_token_count": 0,
+        }
+
+        # Iterate over the elements and accumulate the results
+        for e in elem:
+            result = render_with_level_and_early_exit_with_token_estimation(e, level, tokenizer, token_limit)
+            accumulated_result = {
+                "prompt": sum_prompts(accumulated_result["prompt"], result["prompt"]),
+                "empty_token_count": accumulated_result["empty_token_count"] + result["empty_token_count"],
+            }
+        lower_bound = estimate_lower_bound_tokens_for_prompt(accumulated_result["prompt"], tokenizer)
         if lower_bound > token_limit:
             raise ValueError("Token limit exceeded!")
-        return {"prompt": prompt_sum, "empty_token_count": sum(r["empty_token_count"] for r in results)}
+        return accumulated_result
 
     if isinstance(elem, str) or isinstance(elem, (int, float)):
         return {"prompt": str(elem), "empty_token_count": 0}
@@ -684,7 +709,20 @@ def render_with_level_and_early_exit_with_token_estimation(
             if is_chat_prompt(p["prompt"]):
                 raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
 
-            message = ChatPromptMessage(role=elem.role, name=elem.name, content="")
+            # message = ChatPromptMessage(role=elem.role, name=elem.name, content="")
+            # if elem.role in ["user", "system"]:
+            #     message = ChatPromptUserSystemMessage(role=elem.role, name=elem.name, content=p["prompt"])
+            # elif elem.role == "assistant":
+            #     message = ChatPromptAssistantMessage(role=elem.role, content=p["prompt"])
+            #     if elem.function_call:
+            #         message.function_call = elem.function_call
+            if elem.role in ["user", "system"]:
+                message = {"role": elem.role, "name": elem.name, "content": p["prompt"]}
+            elif elem.role == "assistant":
+                message = {"role": elem.role, "content": p["prompt"]}
+                if elem.function_call:
+                    message["function_call"] = elem.function_call
+
             return {
                 "prompt": {"type": "chat", "messages": [message], "functions": prompt_has_functions(p["prompt"]) if p["prompt"] else None},
                 "empty_token_count": p["empty_token_count"],
@@ -827,7 +865,6 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
             child_results = render_with_level(elem.children, level, tokenizer, call_ejected_callback)
             if is_chat_prompt(child_results["prompt"]):
                 raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
-
             # Construct the chat message based on the role
             content = child_results["prompt"] if is_plain_prompt(child_results["prompt"]) else child_results["prompt"].get("text", "")
 
@@ -1137,13 +1174,13 @@ def estimate_lower_bound_tokens_for_prompt(prompt: RenderedPrompt, tokenizer):
 
     if is_chat_prompt(prompt):
         content_tokens = sum(
-            estimate_tokens_using_charcount(b.name + b.content, tokenizer=tokenizer)[0]
-            if b.role == "function"
+            estimate_tokens_using_charcount(b.get("name") + b.get("content"), tokenizer=tokenizer)[0]
+            if b.get("role") == "function"
             else estimate_tokens_using_charcount(
-                b.functionCall["name"] + b.functionCall["arguments"] + (b.content or ""), tokenizer=tokenizer
+                b.get("function_call")["name"] + b.get("function_call")["arguments"] + (b.get("content") or ""), tokenizer=tokenizer
             )[0]
-            if b.role == "assistant" and b.functionCall is not None
-            else estimate_tokens_using_charcount(b.content or "", tokenizer=tokenizer)[0]
+            if b.get("role") == "assistant" and b.get("function_call") is not None
+            else estimate_tokens_using_charcount(b.get("content") or "", tokenizer=tokenizer)[0]
             for b in prompt.get("messages")
         )
     elif is_plain_prompt(prompt):

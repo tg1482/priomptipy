@@ -55,10 +55,10 @@ class Isolate:
 # Scope type
 @dataclass
 class Scope:
-    type: str
     children: List["Node"]
-    absolute_priority: Optional[int] = None
-    relative_priority: Optional[int] = None
+    type: str = "scope"
+    absolute_priority: Optional[int] = 0
+    relative_priority: Optional[int] = 0
     on_eject: Optional[Callable] = None
     on_include: Optional[Callable] = None
 
