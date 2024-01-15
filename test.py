@@ -12,13 +12,7 @@ from lib import render, prompt_to_tokens
 async def test_prompt_to_tokens():
     def simple_message_prompt(props: PromptProps = None) -> PromptElement:
         """
-        Create a prompt with system and user messages, and an optional break token.
-
-        Args:
-        - props: A dictionary containing
-
-        Returns:
-        - A PromptElement representing the created prompt.
+        Create a prompt with system and user messages
         """
 
         prompt_elements = []
@@ -96,25 +90,21 @@ async def test_multi_message_content_to_tokens():
 
     render_options = {"token_limit": 40, "tokenizer": "cl100k_base"}
     rendered_few = await render(multi_message_prompt(), render_options)
-    print(rendered_few)
-    empty_tokens = await prompt_to_tokens(rendered_few["prompt"], "cl100k_base")
-    # assert len(empty_tokens) == rendered_empty["token_count"]
-    assert False
-
-
-# @pytest.mark.asyncio
-# async def test_mixed_content_to_tokens():
-#     def mixed_content_prompt(props: PromptProps = None) -> PromptElement:
-#         """
-#         Create a prompt with a mix of text and function calls.
-#         """
-#         return [
-#             SystemMessage("System message text."),
-#             UserMessage("User message text."),
-#             AssistantMessage(function_call={"name": "echo", "arguments": '{"message": "test"}'}),
-#         ]
-
-#     render_options = {"token_limit": 1000, "tokenizer": "cl100k_base"}
-#     rendered_mixed = await render(mixed_content_prompt(), render_options)
-#     mixed_tokens = await prompt_to_tokens(rendered_mixed["prompt"], "cl100k_base")
-#     assert len(mixed_tokens) == rendered_mixed["token_count"]
+    assert rendered_few == {
+        "prompt": {
+            "type": "chat",
+            "messages": [
+                {"role": "system", "name": None, "content": "Testing to see if this works"},
+                {"role": "user", "name": None, "content": "Oh mah gawh"},
+                {"role": "assistant", "content": "Betty look at that cahh", "function_call": None},
+            ],
+        },
+        "token_count": 30,
+        "tokens_reserved": 0,
+        "token_limit": 40,
+        "tokenizer": "cl100k_base",
+        "duration_ms": None,
+        "output_handlers": [],
+        "stream_handlers": [],
+        "priority_cutoff": 10,
+    }
