@@ -1,5 +1,3 @@
-from openai import OpenAI
-
 # Constants for model names
 GPT_3_5_TURBO = "gpt-3.5-turbo"
 GPT_3_5_TURBO_NIGHTLY_0613 = "gpt-3.5-turbo-0613"
@@ -98,5 +96,3 @@ EMBEDDING_MODEL = "text-embedding-ada-002"
 # linear factor is <|im_start|>system<|im_sep|>  and <|im_end|>
 CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR = 4
 CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT = 3
-
-# Some openai stuff left
