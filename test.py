@@ -1,5 +1,5 @@
 import pytest
-from components import SystemMessage, UserMessage, AssistantMessage, Function
+from components import SystemMessage, UserMessage, AssistantMessage, Function, FunctionMessage
 from prompt_types import (
     PromptProps,
     PromptElement,
@@ -154,3 +154,85 @@ async def test_function_message():
             },
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_all_messages():
+    def test_all_messages(props: PromptProps = None) -> PromptElement:
+        # Create a function message
+        function_message = Function(
+            name="echo",
+            description="Echo a message to the user.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The message to echo.",
+                    },
+                },
+                "required": ["message"],
+            },
+        )
+        # Create other messages
+        system_message = SystemMessage("System message")
+        user_message = UserMessage("User message")
+        assistant_message = AssistantMessage(
+            function_call={
+                "name": "echo",
+                "arguments": '{"message": "this is a test echo"}',
+            }
+        )
+        function_message_content = FunctionMessage(name="echo", children=["this is a test echo"])
+
+        return [function_message, system_message, user_message, assistant_message, function_message_content]
+
+    render_options = {"token_limit": 1000, "tokenizer": "cl100k_base"}
+    rendered = await render(test_all_messages(), render_options)
+
+    assert is_chat_prompt(rendered["prompt"]), "The prompt should be a chat prompt"
+    assert prompt_has_functions(rendered["prompt"]), "The prompt should contain functions"
+
+    # Check if the functions are correctly rendered
+    expected_functions = [
+        {
+            "name": "echo",
+            "description": "Echo a message to the user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The message to echo.",
+                    },
+                },
+                "required": ["message"],
+            },
+        },
+    ]
+    assert rendered["prompt"]["functions"] == expected_functions, "The functions are not as expected"
+
+    # Check if the messages are correctly rendered
+    expected_messages = [
+        {
+            "role": "system",
+            "content": "System message",
+        },
+        {
+            "role": "user",
+            "content": "User message",
+        },
+        {
+            "role": "assistant",
+            "function_call": {
+                "name": "echo",
+                "arguments": '{"message": "this is a test echo"}',
+            },
+        },
+        {
+            "role": "function",
+            "name": "echo",
+            "content": "this is a test echo",
+        },
+    ]
+    assert rendered["prompt"]["messages"] == expected_messages, "The messages are not as expected"

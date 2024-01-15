@@ -926,7 +926,7 @@ def validate_not_both_absolute_and_relative_priority(elem: PromptElement):
             for child in elem.children:
                 validate_not_both_absolute_and_relative_priority(child)
 
-        case "capture" | "breaktoken" | "functionDefinition" | "empty":
+        case "capture" | "breaktoken" | "function_definition" | "empty":
             return
 
 
@@ -957,7 +957,7 @@ def validate_no_children_higher_priority_than_parent(elem: PromptElement, parent
             for child in elem.children:
                 validate_no_children_higher_priority_than_parent(child, priority)
 
-        case "capture" | "breaktoken" | "functionDefinition" | "empty":
+        case "capture" | "breaktoken" | "function_definition" | "empty":
             return
 
 
@@ -1126,7 +1126,7 @@ def prompt_to_openai_chat_messages(prompt):
 async def count_message_tokens(message: ChatPromptMessage, tokenizer):
     if message.get("role") == "function":
         name_tokens = await num_tokens(message.get("name"), tokenizer=tokenizer)
-        content_tokens = await num_tokens_prompt_string(message.content, tokenizer=tokenizer)
+        content_tokens = await num_tokens_prompt_string(message.get("content"), tokenizer=tokenizer)
         return name_tokens + content_tokens + 2
     elif message.get("role") == "assistant" and message.get("function_call") is not None:
         function_call_tokens = await count_function_call_message_tokens(message.get("function_call"), tokenizer=tokenizer)
