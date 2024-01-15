@@ -94,8 +94,8 @@ async def test_multi_message_content_to_tokens():
         "prompt": {
             "type": "chat",
             "messages": [
-                {"role": "system", "name": None, "content": "Testing to see if this works"},
-                {"role": "user", "name": None, "content": "Oh mah gawh"},
+                {"role": "system", "content": "Testing to see if this works"},
+                {"role": "user", "content": "Oh mah gawh"},
                 {"role": "assistant", "content": "Betty look at that cahh"},
             ],
         },
@@ -214,8 +214,8 @@ async def test_all_messages():
 
     # Check if the messages are correctly rendered
     expected_messages = [
-        {"role": "system", "name": None, "content": "System message"},
-        {"role": "user", "name": None, "content": "User message"},
+        {"role": "system", "content": "System message"},
+        {"role": "user", "content": "User message"},
         {"role": "assistant", "content": "", "function_call": {"name": "echo", "arguments": '{"message": "this is a test echo"}'}},
         {"role": "function", "name": "echo", "content": "this is a test echo"},
     ]

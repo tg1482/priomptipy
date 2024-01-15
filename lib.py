@@ -591,32 +591,44 @@ async def render_with_level_and_count_tokens(elem: PromptElement, level: int, to
             }
 
         case "chat":
-            p = await render_with_level_and_count_tokens(elem.children, level, tokenizer)
-            if is_chat_prompt(p["prompt"]):
-                raise ValueError("Incorrect prompt: nested chat messages are not allowed")
-
-            extra_token_count = 0
-            message = {"role": elem.role, "name": elem.name, "content": ""}
+            child_results = render_with_level_and_count_tokens(elem.children, level, tokenizer)
+            if is_chat_prompt(child_results["prompt"]):
+                raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
+            # Construct the chat message based on the role
+            message = {}
             if elem.role in ["user", "system"]:
-                message["content"] = p["prompt"] if is_plain_prompt(p["prompt"]) else (p["prompt"]["text"] if p["prompt"] else "")
+                message = {
+                    "role": elem.role,
+                    "content": prompt_get_text(child_results["prompt"]) if child_results["prompt"] else "",
+                }
+                if hasattr(elem, "name") and elem.name is not None:
+                    message["name"] = elem.name
             elif elem.role == "assistant":
-                message["content"] = p["prompt"] if is_plain_prompt(p["prompt"]) else (p["prompt"]["text"] if p["prompt"] else "")
-                if elem.function_call:
+                message = {
+                    "role": elem.role,
+                    "content": prompt_get_text(child_results["prompt"]) if child_results["prompt"] else "",
+                }
+                if hasattr(elem, "function_call") and elem.function_call is not None:
                     message["function_call"] = elem.function_call
-                    extra_token_count += await count_function_call_message_tokens(elem.function_call, tokenizer)
             elif elem.role == "function":
-                message["content"] = p["prompt"] if is_plain_prompt(p["prompt"]) else (p["prompt"]["text"] if p["prompt"] else "")
-                extra_token_count += await num_tokens(elem.name, {"tokenizer": tokenizer})
+                message = {
+                    "role": elem.role,
+                    "name": elem.name,
+                    "content": prompt_get_text(child_results["prompt"]) if child_results["prompt"] else "",
+                }
 
             return {
-                "prompt": {"type": "chat", "messages": [message], "functions": prompt_has_functions(p["prompt"]) if p["prompt"] else None},
-                "token_count": p["token_count"] + CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR + extra_token_count,
-                "empty_token_count": p["empty_token_count"],
-                "output_handlers": p["output_handlers"],
-                "stream_handlers": p["stream_handlers"],
+                "prompt": {
+                    "type": "chat",
+                    "messages": [message],
+                    "functions": prompt_has_functions(child_results["prompt"]) if child_results["prompt"] else None,
+                },
+                "empty_token_count": child_results["empty_token_count"],
+                "output_handlers": child_results["output_handlers"],
+                "stream_handlers": child_results["stream_handlers"],
             }
 
-        case "normalizedString":
+        case "normalized_string":
             if elem.cached_count is None:
                 elem.cached_count = await num_tokens(elem.s, {"tokenizer": tokenizer})
             return {
@@ -649,12 +661,11 @@ def render_with_level_and_early_exit_with_token_estimation(
             "empty_token_count": 0,
         }
 
-        # Iterate over the elements and accumulate the results
-        for e in elem:
-            result = render_with_level_and_early_exit_with_token_estimation(e, level, tokenizer, token_limit)
+        results = [render_with_level_and_early_exit_with_token_estimation(e, level, tokenizer, token_limit) for e in elem]
+        for r in results:
             accumulated_result = {
-                "prompt": sum_prompts(accumulated_result["prompt"], result["prompt"]),
-                "empty_token_count": accumulated_result["empty_token_count"] + result["empty_token_count"],
+                "prompt": sum_prompts(accumulated_result["prompt"], r["prompt"]),
+                "empty_token_count": accumulated_result["empty_token_count"] + r["empty_token_count"],
             }
         lower_bound = estimate_lower_bound_tokens_for_prompt(accumulated_result["prompt"], tokenizer)
         if lower_bound > token_limit:
@@ -705,20 +716,26 @@ def render_with_level_and_early_exit_with_token_estimation(
             }
 
         case "chat":
-            p = render_with_level_and_early_exit_with_token_estimation(elem.children, level, tokenizer, token_limit)
-            if is_chat_prompt(p["prompt"]):
+            child_results = render_with_level_and_early_exit_with_token_estimation(elem.children, level, tokenizer, token_limit)
+            if is_chat_prompt(child_results["prompt"]):
                 raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
 
             if elem.role in ["user", "system"]:
-                message = {"role": elem.role, "name": elem.name, "content": p["prompt"]}
+                message = {"role": elem.role, "content": child_results["prompt"]}
+                if hasattr(elem, "name") and elem.name is not None:
+                    message["name"] = elem.name
             elif elem.role == "assistant":
-                message = {"role": elem.role, "content": p["prompt"]}
+                message = {"role": elem.role, "content": child_results["prompt"]}
                 if elem.function_call:
                     message["function_call"] = elem.function_call
 
             return {
-                "prompt": {"type": "chat", "messages": [message], "functions": prompt_has_functions(p["prompt"]) if p["prompt"] else None},
-                "empty_token_count": p["empty_token_count"],
+                "prompt": {
+                    "type": "chat",
+                    "messages": [message],
+                    "functions": prompt_has_functions(child_results["prompt"]) if child_results["prompt"] else None,
+                },
+                "empty_token_count": child_results["empty_token_count"],
             }
 
         case "scope":
@@ -787,15 +804,13 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
             "output_handlers": [],
             "stream_handlers": [],
         }
-
-        # Iterate over the elements and accumulate the results
-        for e in elem:
-            result = render_with_level(e, level, tokenizer, call_ejected_callback)
+        results = [render_with_level(e, level, tokenizer, call_ejected_callback) for e in elem]
+        for r in results:
             accumulated_result = {
-                "prompt": sum_prompts(accumulated_result["prompt"], result["prompt"]),
-                "empty_token_count": accumulated_result["empty_token_count"] + result["empty_token_count"],
-                "output_handlers": accumulated_result["output_handlers"] + result["output_handlers"],
-                "stream_handlers": accumulated_result["stream_handlers"] + result["stream_handlers"],
+                "prompt": sum_prompts(accumulated_result["prompt"], r["prompt"]),
+                "empty_token_count": accumulated_result["empty_token_count"] + r["empty_token_count"],
+                "output_handlers": accumulated_result["output_handlers"] + r["output_handlers"],
+                "stream_handlers": accumulated_result["stream_handlers"] + r["stream_handlers"],
             }
 
         return accumulated_result
@@ -863,9 +878,10 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
             if elem.role in ["user", "system"]:
                 message = {
                     "role": elem.role,
-                    "name": elem.name,
                     "content": prompt_get_text(child_results["prompt"]) if child_results["prompt"] else "",
                 }
+                if hasattr(elem, "name") and elem.name is not None:
+                    message["name"] = elem.name
             elif elem.role == "assistant":
                 message = {
                     "role": elem.role,
