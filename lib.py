@@ -45,42 +45,42 @@ from openai_helper import (
     usable_language_models,
 )
 from output_cache import OutputCatcher
-from tokenizer import get_tokenizer_name, num_tokens, estimate_tokens_using_charcount
+from tokenizer import get_tokenizer_name, num_tokens, estimate_tokens_using_charcount, encode_tokens
 
 
 # Type Checking Functions
 
 
-def is_chat_prompt(prompt):
+def is_chat_prompt(prompt) -> bool:
     return isinstance(prompt, dict) and prompt.get("type") == "chat"
 
 
-def is_plain_prompt(prompt):
+def is_plain_prompt(prompt) -> bool:
     return isinstance(prompt, str) or isinstance(prompt, list)
 
 
-def is_text_prompt_potentially_with_functions(prompt):
+def is_text_prompt_potentially_with_functions(prompt) -> bool:
     return (isinstance(prompt, dict) and "text" in prompt) or isinstance(prompt, str)
 
 
-def prompt_has_functions(prompt):
+def prompt_has_functions(prompt) -> bool:
     return isinstance(prompt, dict) and "functions" in prompt and prompt["functions"] is not None
 
 
 # Utility Functions
 
 
-def prompt_string_to_string(prompt_string):
+def prompt_string_to_string(prompt_string) -> str:
     return "".join(prompt_string) if isinstance(prompt_string, list) else prompt_string
 
 
-def prompt_get_text(prompt):
+def prompt_get_text(prompt) -> str:
     if not is_text_prompt_potentially_with_functions(prompt):
         return None
     return prompt_string_to_string(prompt) if is_plain_prompt(prompt) else prompt_string_to_string(prompt["text"])
 
 
-def sum_prompt_strings(a, b):
+def sum_prompt_strings(a, b) -> str:
     if isinstance(a, list) and isinstance(b, list):
         return a[:-1] + [a[-1] + b[0]] + b[1:]
     if isinstance(a, list):
@@ -1003,7 +1003,7 @@ CL100K_END_TOKEN = [100265]
 
 async def inject_name(tokens: int, name: str, tokenizer_object=None):
     # name_tokens = await tokenizer_object.encode_cl100k_no_special_tokens(":" + name)
-    name_tokens = await num_tokens(":" + name, tokenizer="cl100k_base")
+    name_tokens = await encode_tokens(name + ":", tokenizer="cl100k_base")
     return tokens[:-1] + name_tokens + [tokens[-1]]
 
 
@@ -1015,24 +1015,28 @@ async def prompt_to_tokens(prompt: RenderedPrompt, tokenizer):
         if isinstance(prompt, list):
             tokens_lists = await asyncio.gather(*(num_tokens(s, tokenizer=tokenizer) for s in prompt))
             return [token for tokens in tokens_lists for token in tokens]
-        return await num_tokens(prompt, tokenizer=tokenizer)
+        return await encode_tokens(prompt, tokenizer=tokenizer)
 
     elif is_chat_prompt(prompt):
         parts = []
         for msg in prompt.get("messages"):
-            if msg.role == "function":
+            if msg.get("role") == "function":
                 raise ValueError("BUG!! promptToTokens got a chat prompt with a function message, which is not supported yet!")
 
-            if msg.role == "assistant" and msg.function_call is not None:
+            if msg.get("role") == "assistant" and msg.get("function_call") is not None:
                 raise ValueError("BUG!! promptToTokens got a chat prompt with a function message, which is not supported yet!")
 
             header_tokens = (
-                CL100K_ASSISTANT_TOKENS if msg.role == "assistant" else CL100K_SYSTEM_TOKENS if msg.role == "system" else CL100K_USER_TOKENS
+                CL100K_ASSISTANT_TOKENS
+                if msg.get("role") == "assistant"
+                else CL100K_SYSTEM_TOKENS
+                if msg.get("role") == "system"
+                else CL100K_USER_TOKENS
             )
-            if "name" in msg and msg.name is not None:
-                header_tokens = await inject_name(header_tokens, msg.name)
+            if "name" in msg and msg.get("name") is not None:
+                header_tokens = await inject_name(header_tokens, msg.get("name"))
 
-            content_tokens = await prompt_to_tokens(msg.content, tokenizer) if msg.content is not None else []
+            content_tokens = await prompt_to_tokens(msg.get("content"), tokenizer) if msg.get("content") is not None else []
             parts.append(header_tokens + content_tokens)
 
         final_tokens = []
@@ -1051,11 +1055,19 @@ def prompt_to_openai_chat_messages(prompt):
 
     elif is_chat_prompt(prompt):
         return [
-            {"role": msg.role, "name": msg.name, "content": prompt_string_to_string(msg.content)}
-            if msg.role == "function"
-            else {"role": msg.role, "content": prompt_string_to_string(msg.content), "function_call": msg.function_call}
-            if msg.role == "assistant" and msg.function_call is not None
-            else {"role": msg.role, "content": prompt_string_to_string(msg.content), "name": msg.name if "name" in msg else None}
+            {"role": msg.get("role"), "name": msg.get("name"), "content": prompt_string_to_string(msg.get("content"))}
+            if msg.get("role") == "function"
+            else {
+                "role": msg.get("role"),
+                "content": prompt_string_to_string(msg.get("content")),
+                "function_call": msg.get("function_call"),
+            }
+            if msg.get("role") == "assistant" and msg.get("function_call") is not None
+            else {
+                "role": msg.get("role"),
+                "content": prompt_string_to_string(msg.get("content")),
+                "name": msg.get("name") if "name" in msg else None,
+            }
             for msg in prompt.get("messages")
         ]
 
@@ -1063,16 +1075,18 @@ def prompt_to_openai_chat_messages(prompt):
 
 
 async def count_message_tokens(message: ChatPromptMessage, tokenizer):
-    if message.role == "function":
-        name_tokens = await num_tokens(message.name, tokenizer=tokenizer)
+    if message.get("role") == "function":
+        name_tokens = await num_tokens(message.get("name"), tokenizer=tokenizer)
         content_tokens = await num_tokens_prompt_string(message.content, tokenizer=tokenizer)
         return name_tokens + content_tokens + 2
-    elif message.role == "assistant" and message.functionCall is not None:
-        function_call_tokens = await count_function_call_message_tokens(message.functionCall, tokenizer=tokenizer)
-        content_tokens = await num_tokens_prompt_string(message.content, tokenizer=tokenizer) if message.content is not None else 0
+    elif message.get("role") == "assistant" and message.get("functionCall") is not None:
+        function_call_tokens = await count_function_call_message_tokens(message.get("functionCall"), tokenizer=tokenizer)
+        content_tokens = (
+            await num_tokens_prompt_string(message.get("content"), tokenizer=tokenizer) if message.get("content") is not None else 0
+        )
         return function_call_tokens + content_tokens
     else:
-        return await num_tokens_prompt_string(message.content or "", tokenizer=tokenizer)
+        return await num_tokens_prompt_string(message.get("content") or "", tokenizer=tokenizer)
 
 
 async def count_function_call_message_tokens(function_call, tokenizer):

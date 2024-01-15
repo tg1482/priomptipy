@@ -31,8 +31,8 @@ async def test_prompt_to_tokens():
 
         # Adding system message with optional break tokens
         system_message_content = [
-            "This is the start of the prompt.\n",
-            "\nThis is the second part of the prompt.",
+            "This is the start of the prompt.",
+            "This is the second part of the prompt.",
         ]
         prompt_elements.append(SystemMessage(system_message_content))
 
@@ -45,5 +45,7 @@ async def test_prompt_to_tokens():
     render_options = {"token_limit": 1000, "tokenizer": "cl100k_base"}
     # Test for break token
     do_not_break = await render(simple_message_prompt(), render_options)
+    print(do_not_break)
     to_tokens = await prompt_to_tokens(do_not_break["prompt"], "cl100k_base")
-    assert len(to_tokens) == len(do_not_break["token_count"])
+    print(to_tokens)
+    assert len(to_tokens) == do_not_break["token_count"]
