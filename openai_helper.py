@@ -1,4 +1,4 @@
-from openai import OpenAIAPI
+from openai import OpenAI
 
 # Constants for model names
 GPT_3_5_TURBO = "gpt-3.5-turbo"

@@ -47,8 +47,8 @@ class Capture:
 @dataclass
 class Isolate:
     type: str
-    children: List["Node"]
     token_limit: int
+    children: List["Node"]
     cached_render_output: Optional["RenderOutput"] = None
 
 
@@ -68,8 +68,8 @@ class Scope:
 class ChatUserSystemMessage:
     type: str
     role: str
-    name: Optional[str] = None
     children: List["Node"]
+    name: Optional[str] = None
 
 
 # ChatAssistantMessage type
@@ -91,9 +91,7 @@ class ChatFunctionResultMessage:
 
 
 # ChatMessage type
-ChatMessage = Union[
-    ChatUserSystemMessage, ChatAssistantMessage, ChatFunctionResultMessage
-]
+ChatMessage = Union[ChatUserSystemMessage, ChatAssistantMessage, ChatFunctionResultMessage]
 
 
 # FunctionDefinition type
@@ -155,8 +153,8 @@ PromptString = Union[str, List[str]]
 @dataclass
 class ChatPromptUserSystemMessage:
     role: str
-    name: Optional[str] = None
     content: PromptString
+    name: Optional[str] = None
 
 
 # ChatPromptAssistantMessage type
