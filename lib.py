@@ -684,7 +684,7 @@ def render_with_level_and_early_exit_with_token_estimation(
             if is_chat_prompt(p["prompt"]):
                 raise ValueError("Incorrect prompt: nested chat messages are not allowed!")
 
-            message = create_chat_message(elem, p["prompt"])
+            message = ChatPromptMessage(role=elem.role, name=elem.name, content="")
             return {
                 "prompt": {"type": "chat", "messages": [message], "functions": prompt_has_functions(p["prompt"]) if p["prompt"] else None},
                 "empty_token_count": p["empty_token_count"],
@@ -750,14 +750,24 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
         return {"prompt": None, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
 
     if isinstance(elem, list):
-        results = [render_with_level(e, level, tokenizer, call_ejected_callback) for e in elem]
-        prompt_sum = sum_prompts(*[r["prompt"] for r in results])
-        return {
-            "prompt": prompt_sum,
-            "empty_token_count": sum(r["empty_token_count"] for r in results),
-            "output_handlers": [handler for r in results for handler in r["output_handlers"]],
-            "stream_handlers": [handler for r in results for handler in r["stream_handlers"]],
+        accumulated_result = {
+            "prompt": None,
+            "empty_token_count": 0,
+            "output_handlers": [],
+            "stream_handlers": [],
         }
+
+        # Iterate over the elements and accumulate the results
+        for e in elem:
+            result = render_with_level(e, level, tokenizer, call_ejected_callback)
+            accumulated_result = {
+                "prompt": sum_prompts(accumulated_result["prompt"], result["prompt"]),
+                "empty_token_count": accumulated_result["empty_token_count"] + result["empty_token_count"],
+                "output_handlers": accumulated_result["output_handlers"] + result["output_handlers"],
+                "stream_handlers": accumulated_result["stream_handlers"] + result["stream_handlers"],
+            }
+
+        return accumulated_result
 
     if isinstance(elem, (str, int)):
         return {"prompt": str(elem), "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
@@ -974,7 +984,7 @@ async def count_tokens_exact(tokenizer, prompt, options):
     elif is_chat_prompt(prompt):
         msg_tokens = await asyncio.gather(*(count_message_tokens(msg, tokenizer) for msg in prompt.get("messages")))
         extra_token_count = (
-            CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR * len(prompt.get("messages")) + CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT
+            CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR * (len(prompt.get("messages")) - 1) + CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT
         )
         tokens += sum(msg_tokens) + extra_token_count
         if options.get("last_message_is_incomplete", False):
@@ -1013,7 +1023,7 @@ async def prompt_to_tokens(prompt: RenderedPrompt, tokenizer):
 
     if is_plain_prompt(prompt):
         if isinstance(prompt, list):
-            tokens_lists = await asyncio.gather(*(num_tokens(s, tokenizer=tokenizer) for s in prompt))
+            tokens_lists = await asyncio.gather(*(encode_tokens(s, tokenizer=tokenizer) for s in prompt))
             return [token for tokens in tokens_lists for token in tokens]
         return await encode_tokens(prompt, tokenizer=tokenizer)
 
