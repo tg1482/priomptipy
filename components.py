@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass, field
-from prompt_types import ChatUserSystemMessage, ChatAssistantMessage
+from prompt_types import ChatUserSystemMessage, ChatAssistantMessage, ChatFunctionResultMessage, FunctionDefinition, Capture
 from typing import List, Optional, Any
 
 
@@ -18,25 +18,25 @@ def AssistantMessage(children=None, function_call=None, name=None):
     )
 
 
-# def function_message(name, children=None):
-#     return {"type": "chat", "role": "function", "name": name, "children": flatten(children) if children is not None else []}
+def FunctionMessage(name, children=None):
+    return ChatFunctionResultMessage(type="chat", role="function", name=name, children=flatten(children) if children is not None else [])
 
 
-# def function(name, description, parameters, on_call=None):
-#     if not valid_function_name(name):
-#         raise ValueError(f"Invalid function name: {name}.")
-#     return [
-#         {"type": "function_definition", "name": name, "description": description, "parameters": parameters},
-#         {
-#             "type": "capture",
-#             "on_output": lambda output: on_call(output["function_call"]["arguments"])
-#             if on_call is not None
-#             and "function_call" in output
-#             and output["function_call"]["name"] == name
-#             and "arguments" in output["function_call"]
-#             else None,
-#         },
-#     ]
+def Function(name, description, parameters, on_call=None):
+    if not valid_function_name(name):
+        raise ValueError(f"Invalid function name: {name}.")
+    return [
+        FunctionDefinition(type="function_definition", name=name, description=description, parameters=parameters),
+        Capture(
+            type="capture",
+            on_output=lambda output: on_call(output["function_call"]["arguments"])
+            if on_call is not None
+            and "function_call" in output
+            and output["function_call"]["name"] == name
+            and "arguments" in output["function_call"]
+            else None,
+        ),
+    ]
 
 
 def valid_function_name(name):

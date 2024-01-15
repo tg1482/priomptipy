@@ -1,11 +1,11 @@
 import pytest
-from components import SystemMessage, UserMessage, AssistantMessage
+from components import SystemMessage, UserMessage, AssistantMessage, Function
 from prompt_types import (
     PromptProps,
     PromptElement,
     Scope,
 )
-from lib import render, prompt_to_tokens
+from lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
 
 
 @pytest.mark.asyncio
@@ -108,3 +108,49 @@ async def test_multi_message_content_to_tokens():
         "stream_handlers": [],
         "priority_cutoff": 10,
     }
+
+
+@pytest.mark.asyncio
+async def test_function_message():
+    def test_function(props: PromptProps = None) -> PromptElement:
+        # Create a function message
+        function_message = Function(
+            name="echo",
+            description="Echo a message to the user.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The message to echo.",
+                    },
+                },
+                "required": ["message"],
+            },
+        )
+        # Create a user message
+        user_message = UserMessage("say hi")
+        return [function_message, user_message]
+
+    render_options = {"token_limit": 1000, "tokenizer": "cl100k_base"}
+    rendered = await render(test_function(), render_options)
+    assert is_chat_prompt(rendered["prompt"]) is True
+    assert prompt_has_functions(rendered["prompt"]) is True
+    if not prompt_has_functions(rendered["prompt"]):
+        return
+    assert rendered["prompt"]["functions"] == [
+        {
+            "name": "echo",
+            "description": "Echo a message to the user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The message to echo.",
+                    },
+                },
+                "required": ["message"],
+            },
+        },
+    ]

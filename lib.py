@@ -1030,7 +1030,9 @@ async def count_tokens_exact(tokenizer, prompt, options):
         tokens += await num_tokens_prompt_string(prompt.get("text"), tokenizer)
 
     if prompt_has_functions(prompt):
-        function_tokens = await asyncio.gather(*(count_function_tokens(func, tokenizer) + 2 for func in prompt.get("functions")))
+        function_tokens_coroutines = [count_function_tokens(func, tokenizer) for func in prompt.get("functions")]
+        function_tokens_results = await asyncio.gather(*function_tokens_coroutines)
+        function_tokens = [result + 2 for result in function_tokens_results]
         tokens += sum(function_tokens)
 
     return tokens
@@ -1145,9 +1147,9 @@ async def count_function_call_message_tokens(function_call, tokenizer):
 async def count_function_tokens(function_definition: ChatAndFunctionPromptFunction, tokenizer):
     stringified_function = json.dumps(
         {
-            "name": function_definition.name,
-            "description": function_definition.description,
-            "parameters": function_definition.parameters,
+            "name": function_definition.get("name"),
+            "description": function_definition.get("description"),
+            "parameters": function_definition.get("parameters"),
         },
         indent=2,
     )
@@ -1158,9 +1160,9 @@ async def count_function_tokens(function_definition: ChatAndFunctionPromptFuncti
 def estimate_function_tokens_using_charcount(function_definition: ChatAndFunctionPromptFunction, tokenizer):
     stringified_function = json.dumps(
         {
-            "name": function_definition.name,
-            "description": function_definition.description,
-            "parameters": function_definition.parameters,
+            "name": function_definition.get("name"),
+            "description": function_definition.get("description"),
+            "parameters": function_definition.get("parameters"),
         },
         indent=2,
     )
