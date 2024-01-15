@@ -1,5 +1,12 @@
 /venv
+/venv-dev
 /.git
 /__pycache__
 
 *.pyc
+
+# Package files
+*.gz
+*.txt
+*.whl
+*.egg-info
