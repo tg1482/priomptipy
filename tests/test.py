@@ -1,11 +1,17 @@
 import pytest
-from components import SystemMessage, UserMessage, AssistantMessage, Function, FunctionMessage
-from prompt_types import (
+import sys
+import os
+
+# Assuming your tests directory is at the same level as the src directory
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from src.components import SystemMessage, UserMessage, AssistantMessage, Function, FunctionMessage
+from src.prompt_types import (
     PromptProps,
     PromptElement,
     Scope,
 )
-from lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
+from src.lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
 
 
 @pytest.mark.asyncio
