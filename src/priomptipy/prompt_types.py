@@ -16,8 +16,8 @@ class FunctionBody:
 # First type
 @dataclass
 class First:
-    type: str
     children: List["Scope"]
+    type: str = "first"
     on_eject: Optional[Callable] = None
     on_include: Optional[Callable] = None
 
@@ -25,20 +25,20 @@ class First:
 # Empty type
 @dataclass
 class Empty:
-    type: str
     token_count: int
+    type: str = "empty"
 
 
 # BreakToken type
 @dataclass
 class BreakToken:
-    type: str
+    type: str = "break_token"
 
 
 # Capture type
 @dataclass
 class Capture:
-    type: str
+    type: str = "capture"
     on_output: Optional[Callable] = None
     on_stream: Optional[Callable] = None
 
@@ -46,9 +46,9 @@ class Capture:
 # Isolate type
 @dataclass
 class Isolate:
-    type: str
     token_limit: int
     children: List["Node"]
+    type: str = "isolate"
     cached_render_output: Optional["RenderOutput"] = None
 
 
@@ -57,8 +57,8 @@ class Isolate:
 class Scope:
     children: List["Node"]
     type: str = "scope"
-    absolute_priority: Optional[int] = 0
-    relative_priority: Optional[int] = 0
+    absolute_priority: Optional[int] = None
+    relative_priority: Optional[int] = None
     on_eject: Optional[Callable] = None
     on_include: Optional[Callable] = None
 
@@ -228,8 +228,8 @@ Prompt = Callable[[Dict[str, Any]], Union[List[Any], Any]]
 class RenderOptions:
     model: Optional[str] = None
     token_limit: Optional[int] = None
-    tokenizer: Optional[str] = None
     last_message_is_incomplete: Optional[bool] = None
+    tokenizer: Optional[str] = "cl100k_base"
 
 
 # RenderOutput type

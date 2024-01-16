@@ -5,13 +5,9 @@ import os
 # Assuming your tests directory is at the same level as the src directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.components import SystemMessage, UserMessage, AssistantMessage, Function, FunctionMessage
-from src.prompt_types import (
-    PromptProps,
-    PromptElement,
-    Scope,
-)
-from src.lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
+from src.priomptipy.components import SystemMessage, UserMessage, AssistantMessage, Function, FunctionMessage
+from src.priomptipy.prompt_types import PromptProps, PromptElement, Scope, Isolate, First
+from src.priomptipy.lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
 
 
 @pytest.mark.asyncio
@@ -226,3 +222,82 @@ async def test_all_messages():
         {"role": "function", "name": "echo", "content": "this is a test echo"},
     ]
     assert rendered["prompt"]["messages"] == expected_messages, "The messages are not as expected"
+
+
+@pytest.mark.asyncio
+async def test_isolate():
+    """
+    Tests the isolate and scope against a small token window. We should see that when Isolated, the children
+    of that group are guarenteed to be there - depending on the children's relative priority to each other.
+    However, when not isolated, then the priority of group takes precedence and there are no guarantees on whether
+    a certain group will be included or not.
+    """
+
+    def isolate_component(props: PromptProps) -> PromptElement:
+        if props.get("isolate"):
+            return Isolate(token_limit=props.get("token_limit"), children=props.get("children"))
+        else:
+            return Scope(relative_priority=props.get("relative_priority", -10), children=props.get("children"))
+
+    def test_component(props: PromptProps) -> PromptElement:
+        isolated_messages = [
+            Scope(relative_priority=-i - 2000, children=f"This is an SHOULDBEINCLUDEDONLYIFISOLATED user message number {i}")
+            for i in range(10)
+        ]
+        non_isolated_messages = [Scope(relative_priority=-i - 1000, children=f"This is user message number {i}") for i in range(10)]
+
+        mixed_messages = [
+            Scope(relative_priority=-i, children=f"{i},xl,x,,{'SHOULDBEINCLUDEDONLYIFNOTISOLATED' if i > 50 else ''}") for i in range(100)
+        ]
+
+        final_message = [
+            "This is the start of the prompt.",
+            isolate_component({"token_limit": 100, "isolate": props.get("isolate"), "children": isolated_messages}),
+            non_isolated_messages,
+            isolate_component({"token_limit": 100, "isolate": props.get("isolate"), "children": mixed_messages}),
+        ]
+        return final_message
+
+    render_options = {"token_limit": 300, "tokenizer": "cl100k_base"}
+    rendered_isolated = await render(test_component({"isolate": True}), render_options)
+    rendered_non_isolated = await render(test_component({"isolate": False}), render_options)
+
+    assert "SHOULDBEINCLUDEDONLYIFISOLATED" in rendered_isolated.get("prompt")
+    assert "SHOULDBEINCLUDEDONLYIFNOTISOLATED" in rendered_non_isolated.get("prompt")
+
+
+# @pytest.mark.asyncio
+# async def test_first():
+#     """ """
+
+#     def isolate_component(props: PromptProps) -> PromptElement:
+#         if props.get("isolate"):
+#             return First(token_limit=props.get("token_limit"), children=props.get("children"))
+#         else:
+#             return Scope(relative_priority=props.get("relative_priority", -10), children=props.get("children"))
+
+#     def test_component(props: PromptProps) -> PromptElement:
+#         isolated_messages = [
+#             Scope(relative_priority=-i - 2000, children=f"This is an SHOULDBEINCLUDEDONLYIFISOLATED user message number {i}")
+#             for i in range(10)
+#         ]
+#         non_isolated_messages = [Scope(relative_priority=-i - 1000, children=f"This is user message number {i}") for i in range(10)]
+
+#         mixed_messages = [
+#             Scope(relative_priority=-i, children=f"{i},xl,x,,{'SHOULDBEINCLUDEDONLYIFNOTISOLATED' if i > 50 else ''}") for i in range(100)
+#         ]
+
+#         final_message = [
+#             "This is the start of the prompt.",
+#             isolate_component({"token_limit": 100, "isolate": props.get("isolate"), "children": isolated_messages}),
+#             non_isolated_messages,
+#             isolate_component({"token_limit": 100, "isolate": props.get("isolate"), "children": mixed_messages}),
+#         ]
+#         return final_message
+
+#     render_options = {"token_limit": 300, "tokenizer": "cl100k_base"}
+#     rendered_isolated = await render(test_component({"isolate": True}), render_options)
+#     rendered_non_isolated = await render(test_component({"isolate": False}), render_options)
+
+#     assert "SHOULDBEINCLUDEDONLYIFISOLATED" in rendered_isolated.get("prompt")
+#     assert "SHOULDBEINCLUDEDONLYIFNOTISOLATED" in rendered_non_isolated.get("prompt")

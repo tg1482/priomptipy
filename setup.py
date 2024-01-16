@@ -7,8 +7,8 @@ with open("requirements.txt") as f:
 
 setup(
     name="priomptipy",
-    version="0.12",
-    packages=[""],
+    version="0.13",
+    packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=requirements,  # Include the requirements
     author="The Quarkle Dev Team",

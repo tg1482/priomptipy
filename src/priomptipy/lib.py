@@ -289,7 +289,6 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
     compute_priority_levels(elem, BASE_PRIORITY, priority_levels)
     priority_levels.add(BASE_PRIORITY)
     sorted_priority_levels = sorted(priority_levels)
-    print(f"Priority levels: {sorted_priority_levels}")
 
     # Hydrate isolates
     await hydrate_isolates(elem, tokenizer)
@@ -317,8 +316,6 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
             if is_development_environment():
                 end = time.time()
                 print(f"Candidate level {candidate_level} took {end - start} ms and has {token_count} tokens")
-
-    print(f"Final priority level: {sorted_priority_levels[inclusive_upper_bound]}")
 
     # Final rendering
     final_prompt = render_with_level(elem, sorted_priority_levels[inclusive_upper_bound], tokenizer, True)
@@ -572,11 +569,11 @@ async def render_with_level_and_count_tokens(elem: PromptElement, level: int, to
                     },
                 )
             return {
-                "prompt": elem.cached_render_output.prompt,
-                "token_count": elem.cached_render_output.token_count,
-                "empty_token_count": elem.cached_render_output.tokens_reserved,
-                "output_handlers": elem.cached_render_output.output_handlers,
-                "stream_handlers": elem.cached_render_output.stream_handlers,
+                "prompt": elem.cached_render_output.get("prompt"),
+                "token_count": elem.cached_render_output.get("token_count"),
+                "empty_token_count": elem.cached_render_output.get("tokens_reserved"),
+                "output_handlers": elem.cached_render_output.get("output_handlers"),
+                "stream_handlers": elem.cached_render_output.get("stream_handlers"),
             }
 
         case "chat":
@@ -700,8 +697,8 @@ def render_with_level_and_early_exit_with_token_estimation(
             if elem.cached_render_output is None:
                 raise ValueError("Isolates should have been hydrated before calling render_with_level_and_early_exit_with_token_estimation")
             return {
-                "prompt": elem.cached_render_output.prompt,
-                "empty_token_count": elem.cached_render_output.tokens_reserved,
+                "prompt": elem.cached_render_output.get("prompt"),
+                "empty_token_count": elem.cached_render_output.get("tokens_reserved"),
             }
 
         case "chat":
@@ -852,10 +849,10 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
             if elem.cached_render_output is None:
                 raise ValueError("Isolates should have been hydrated before calling render_with_level")
             return {
-                "prompt": elem.cached_render_output.prompt,
-                "empty_token_count": elem.cached_render_output.tokens_reserved,
-                "output_handlers": elem.cached_render_output.output_handlers,
-                "stream_handlers": elem.cached_render_output.stream_handlers,
+                "prompt": elem.cached_render_output.get("prompt"),
+                "empty_token_count": elem.cached_render_output.get("tokens_reserved"),
+                "output_handlers": elem.cached_render_output.get("output_handlers"),
+                "stream_handlers": elem.cached_render_output.get("stream_handlers"),
             }
 
         case "chat":
@@ -932,7 +929,8 @@ def validate_not_both_absolute_and_relative_priority(elem: PromptElement):
 
         case "scope":
             if hasattr(elem, "absolute_priority") and hasattr(elem, "relative_priority"):
-                print("WARNING: Scope has both absolute and relative priority. Ignoring relative priority.")
+                # print("WARNING: Scope has both absolute and relative priority. Ignoring relative priority.")
+                pass
             for child in elem.children:
                 validate_not_both_absolute_and_relative_priority(child)
 

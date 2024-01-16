@@ -12,6 +12,9 @@ if ! [ -x "$(command -v twine)" ]; then
   exit 1
 fi
 
+# Clean up the build artifacts
+rm -rf dist    
+
 # Bump the version, build and publish to PyPI
 # You can use bump2version or manually update the version in your setup.py or pyproject.toml
 
