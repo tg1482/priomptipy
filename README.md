@@ -1,6 +1,6 @@
 # PriomptiPy
 
-PriomptiPy (priority + prompt + python) is a Python-based prompting library that brings the innovative concept of prioritized prompting from the Anysphere team's JavaScript library [Priompt](https://github.com/anysphere/priompt). Adapted by the [Quarkle](https://quarkle.ai) dev team to Python, PriomptiPy integrates priority-based context management into Python applications, especially useful for AI-enabled agent and chatbot development.
+PriomptiPy (priority + prompt + python) is a Python-based prompting library that brings the innovative concept of prioritized prompting from the Anysphere team's JavaScript library [Priompt](https://github.com/anysphere/priompt). Adapted by the [Quarkle](https://quarkle.ai) dev team, PriomptiPy integrates priority-based context management into Python applications, especially useful for AI-enabled agent and chatbot development.
 
 ## Motivation
 
@@ -54,13 +54,13 @@ These are logical components of PriomptiPy. They work the same way as in the ori
 - **Empty**: Reserves space in the prompt, useful for ensuring there's room for AI-generated content.
 - **Isolate**: A section of the prompt with its own token limit. Useful when you want to include limited information from multiple sources.
 - **First**: Sufficiently high child is selected for inclusion, while subsequent children are excluded. This feature is beneficial for creating fallback mechanisms, such as displaying a message like "(result omitted)" when the output exceeds a certain length.
-- **Capture**: Capture the output and parse it right within the prompt. Implemented but not functional yet.
+- **Capture**: Capture the output and parse it right within the prompt. _Implemented but not functional yet._
 
 And these are the message components that are used to build the content to send to AI models -
 
 - **SystemMessage**: Represents system-level information.
 - **UserMessage/AssistantMessage**: Denotes messages from the user or the AI assistant.
-- **Function**: Encapsulates a callable function within the prompt. The callable feature isn't fully supported yet.
+- **Function**: Encapsulates a callable function within the prompt. _The callable feature isn't fully supported yet._
 
 ## Caveats
 
