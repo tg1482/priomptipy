@@ -1,6 +1,6 @@
 # PriomptiPy
 
-PriomptiPy (priority + prompt + python) is a Python-based prompting library that brings the innovative concept of prioritized prompting from the Anysphere team's JavaScript library [Priompt](https://github.com/anysphere/priompt). Adapted by the [Quarkle](https://quarkle.ai) dev team, PriomptiPy integrates priority-based context management into Python applications, especially useful for AI-enabled agent and chatbot development.
+PriomptiPy (priority + prompt + python) is a Python-based prompting library that brings prioritized prompting from the Anysphere team's JavaScript library [Priompt](https://github.com/anysphere/priompt). Adapted by the [Quarkle](https://quarkle.ai) dev team, PriomptiPy integrates priority-based context management into Python applications, especially useful for AI-enabled agent and chatbot development.
 
 ## Motivation
 
