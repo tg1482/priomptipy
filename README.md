@@ -1,106 +1,76 @@
 # PriomptiPy
 
-Priomptipy (priority + prompt + python) is a python-based prompting library. It uses priorities to decide what to include in the context window. This is a python version of [Priompt](https://github.com/anysphere/priompt), which was generously open-sourced by Anysphere's team.
+PriomptiPy is a Python-based prompting library that brings the innovative concept of prioritized prompting from the Anysphere team's JavaScript library Priompt. Adapted by the Quarkle dev team to Python, PriomptiPy integrates priority-based context management into Python applications, especially useful for AI-enabled agent and chatbot development.
 
-# Installation
+## Motivation
+
+It aims to simplify the process of managing and rendering prompts in AI-driven interactions, making it easier to focus on the most relevant context when hydrating the prompts from multiple sources.
+
+## Installation
+
+To install PriomptiPy, simply use pip:
 
 ```
 pip install priomptipy
 ```
 
-# Examples
+## Examples
+
+Consider a scenario where you want to manage a conversation with a user:
 
 ```
+from priomptipy import SystemMessage, UserMessage, AssistantMessage, Scope, Empty, render
+
 messages = [
     SystemMessage("You are Quarkle, an AI Developmental Editor"),
     Scope([
         UserMessage("Hello Quarkle, how are you?"),
-        AssistantMessage("Hello, I am doing well. How can I help you")
+        AssistantMessage("Hello, I am doing well. How can I help you?")
     ], absolute_priority=5),
-    Scope(children=[
-            UserMessage("Write me a haiku on the number 17"),
-            AssistantMessage("Seventeen whispers, In life's mosaic unseen, Quiet steps of time.")
+    Scope([
+        UserMessage("Write me a haiku on the number 17"),
+        AssistantMessage("Seventeen whispers, In life's mosaic unseen, Quiet steps of time.")
     ], absolute_priority=10),
     UserMessage("Okay nice, now give me a title for it"),
     Empty(token_count=10)
 ]
-```
 
-This creates a list of messages like so -
-
-```
-[ChatUserSystemMessage(type='chat',
-                       role='system',
-                       children=['You are Quarkle, an AI Developmental Editor'],
-                       name=None),
- Scope(children=[ChatUserSystemMessage(type='chat',
-                                       role='user',
-                                       children=['Hello Quarkle, how are you?'],
-                                       name=None),
-                 ChatAssistantMessage(type='chat',
-                                      role='assistant',
-                                      children=['Hello, I am doing well. How '
-                                                'can I help you'],
-                                      function_call=None)],
-       type='scope',
-       absolute_priority=5,
-       relative_priority=None,
-       on_eject=None,
-       on_include=None),
- Scope(children=[ChatUserSystemMessage(type='chat',
-                                       role='user',
-                                       children=['Write me a haiku on the '
-                                                 'number 17'],
-                                       name=None),
-                 ChatAssistantMessage(type='chat',
-                                      role='assistant',
-                                      children=["Seventeen whispers, In life's "
-                                                'mosaic unseen, Quiet steps of '
-                                                'time.'],
-                                      function_call=None)],
-       type='scope',
-       absolute_priority=10,
-       relative_priority=None,
-       on_eject=None,
-       on_include=None),
- ChatUserSystemMessage(type='chat',
-                       role='user',
-                       children=['Okay nice, now give me a title for it'],
-                       name=None),
- Empty(token_count=10, type='empty')]
-```
-
-The magic happens when we call render with a token_limit.
-
-This will then ensure that we do not exceed the token limit by picking the parts of the message based on priority.
-
-```
 render_options = {"token_limit": 80, "tokenizer": "cl100k_base"}
-await render(messages, render_options)
+result = await render(messages, render_options)
+print(result['prompt'])
 ```
 
-Output:
+In this example, SystemMessage, UserMessage, and AssistantMessage are used to structure the conversation. Scope allows prioritizing certain parts of the conversation, ensuring the most relevant messages are included within the token limit.
 
-```
-{'duration_ms': None,
- 'output_handlers': [],
- 'priority_cutoff': 10,
- 'prompt': {'messages': [{'content': 'You are Quarkle, an AI Developmental '
-                                     'Editor',
-                          'role': 'system'},
-                         {'content': 'Write me a haiku on the number 17',
-                          'role': 'user'},
-                         {'content': "Seventeen whispers, In life's mosaic "
-                                     'unseen, Quiet steps of time.',
-                          'role': 'assistant'},
-                         {'content': 'Okay nice, now give me a title for it',
-                          'role': 'user'}],
-            'type': 'chat'},
- 'stream_handlers': [],
- 'token_count': 62,
- 'token_limit': 80,
- 'tokenizer': 'cl100k_base',
- 'tokens_reserved': 10}
-```
+## Principles
 
-In the example above, we always include the system message and the latest user message, and are including as many messages from the history as can fit based on priority and token limits.
+PriomptiPy operates on the principle of prioritized content rendering. Each element in a prompt can be assigned a priority using Scope, determining its importance in the overall context. This system allows for dynamic and efficient management of conversation flow, particularly in RAG applications where context space is limited but text abound.
+
+## Components
+
+These are logical components of PriomptiPy. They work the same way as in the original library.
+
+- Scope: Groups messages and assigns priorities, dictating which messages should be rendered first.
+- Empty: Reserves space in the prompt, useful for ensuring there's room for AI-generated content.
+- Isolate: A section of the prompt with its own token limit. Useful when you want to include limited information from multiple sources.
+- First: Sufficiently high child is selected for inclusion, while subsequent children are excluded. This feature is beneficial for creating fallback mechanisms, such as displaying a message like "(result omitted)" when the output exceeds a certain length.
+- Capture: Capture the output and parse it right within the prompt. Implemented but not functional yet.
+
+And these are the message components that are used to build the content to send to AI models -
+
+- SystemMessage: Represents system-level information.
+- UserMessage/AssistantMessage: Denotes messages from the user or the AI assistant.
+- Function: Encapsulates a callable function within the prompt. The callable feature isn't fully supported yet.
+
+## Caveats
+
+While PriomptiPy enhances prompt management, it requires careful consideration of priorities to avoid overcomplicating prompts. It's crucial to balance the use of priorities to maintain efficient and cache-friendly prompts.
+
+- Runnable function calling and capturing isn't fully supported yet. Will look to support this in the future.
+- While the building blocks for cacheing are present, we haven't included any cacheing of results yet. Would benefit from some help here.
+- There could be potential errors in our implementation of the Javascript library, please let us know / open an issue and we will get to it.
+- Would appreciate any support with maintaining and developing this library and keeping it in sync with the awesome Priompt library.
+
+## Contributions
+
+We warmly welcome contributions to PriomptiPy. The project is open-source under the MIT license, encouraging a collaborative and innovative community.

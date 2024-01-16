@@ -42,19 +42,6 @@ def valid_function_name(name):
     return re.match(r"^[a-zA-Z0-9_]{1,64}$", name) is not None
 
 
-# def z_function(name, description, parameters, on_call=None, on_parse_error=None):
-#     return function(
-#         name=name,
-#         description=description,
-#         parameters=zod_to_json_schema(parameters),
-#         on_call=async_lambda(raw_args: (lambda raw_args: on_call(json.loads(raw_args)) if on_call is not None else None))
-#     )
-
-# def zod_to_json_schema(schema):
-#     full_schema = zod_to_json_schema_impl(schema, ref_strategy="none")
-#     return {key: value for key, value in full_schema.items() if key not in ["$schema", "default", "definitions", "description", "markdownDescription", "additionalProperties"]}
-
-
 def async_lambda(func):
     async def wrapped_func(*args, **kwargs):
         return await func(*args, **kwargs)

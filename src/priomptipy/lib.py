@@ -2,7 +2,7 @@ import os
 import time
 import json
 import math
-from typing import List, Union, Optional, Set
+from typing import List, Union, Optional, Set, Callable, Any
 from dataclasses import dataclass
 import asyncio
 from .prompt_types import (
@@ -251,6 +251,63 @@ def Fragment(children: List[PromptElement]) -> PromptElement:
 
 # BASE_PRIORITY constant
 BASE_PRIORITY = 1e9
+
+
+# Not fully implemented yet. Will test this in the future
+async def render_run(
+    prompt: Prompt,
+    props: PromptElement,
+    render_options: RenderOptions,
+    model_call: Callable[[Any], Any],
+    rendered_messages_callback: Callable[[Any], None] = lambda messages: None,
+):
+    print("Running render_un")
+
+    # Create an instance of OutputCatcher
+    output_catcher = OutputCatcher()
+
+    # Merge props and returnProps
+    output_props = {**props, "on_return": lambda x: output_catcher.on_output(x)}
+
+    # Render the initial prompt
+    prompt_element = prompt(**output_props)
+    rendered = await render(prompt_element, render_options)
+
+    # Prepare the model request
+    model_request = prompt_to_openai_chat_request(rendered["prompt"])
+    rendered_messages_callback(model_request["messages"])
+
+    # Call the model and handle the output
+    model_output = await model_call(model_request)
+
+    if model_output["type"] == "output":
+        if not model_output["value"]["choices"]:
+            raise ValueError("Model returned no choices")
+
+        model_output_message = model_output["value"]["choices"][0]["message"]
+        if model_output_message is None:
+            raise ValueError("Model returned no message")
+
+        # Process output handlers
+        await asyncio.gather(*[handler(model_output_message) for handler in rendered["output_handlers"]])
+    else:
+        # Process stream handlers
+        if not rendered["stream_handlers"]:
+
+            async def awaitable():
+                async for message in model_output["value"]:
+                    yield message
+
+            await output_catcher.on_output(awaitable())
+        else:
+            await asyncio.gather(*[handler(model_output["value"]) for handler in rendered["stream_handlers"]])
+
+    # Get and return the first output
+    first_output = output_catcher.get_output()
+    if first_output is None:
+        raise ValueError("No output was captured. Did you forget to include a <capture> element?")
+
+    return first_output
 
 
 async def render(elem: PromptElement, options: RenderOptions) -> RenderOutput:
