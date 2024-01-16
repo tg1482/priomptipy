@@ -266,38 +266,33 @@ async def test_isolate():
     assert "SHOULDBEINCLUDEDONLYIFNOTISOLATED" in rendered_non_isolated.get("prompt")
 
 
-# @pytest.mark.asyncio
-# async def test_first():
-#     """ """
+@pytest.mark.asyncio
+async def test_first():
+    """
+    Tests the first and scope against a small token window. We should only see the first child of the group.
+    Otherwise, we should see all children of the group.
+    """
 
-#     def isolate_component(props: PromptProps) -> PromptElement:
-#         if props.get("isolate"):
-#             return First(token_limit=props.get("token_limit"), children=props.get("children"))
-#         else:
-#             return Scope(relative_priority=props.get("relative_priority", -10), children=props.get("children"))
+    def first_component(props: PromptProps) -> PromptElement:
+        if props.get("first"):
+            return First(children=props.get("children"))
+        else:
+            return Scope(relative_priority=props.get("relative_priority", -10), children=props.get("children"))
 
-#     def test_component(props: PromptProps) -> PromptElement:
-#         isolated_messages = [
-#             Scope(relative_priority=-i - 2000, children=f"This is an SHOULDBEINCLUDEDONLYIFISOLATED user message number {i}")
-#             for i in range(10)
-#         ]
-#         non_isolated_messages = [Scope(relative_priority=-i - 1000, children=f"This is user message number {i}") for i in range(10)]
+    def test_component(props: PromptProps) -> PromptElement:
+        first_messages = [Scope(relative_priority=-i - 2000, children=f"This is a TESTFIRST user message number {i}") for i in range(10)]
+        non_first_messages = [Scope(relative_priority=-i - 1000, children=f"This is user message number {i}") for i in range(10)]
 
-#         mixed_messages = [
-#             Scope(relative_priority=-i, children=f"{i},xl,x,,{'SHOULDBEINCLUDEDONLYIFNOTISOLATED' if i > 50 else ''}") for i in range(100)
-#         ]
+        final_message = [
+            "This is the start of the prompt.",
+            first_component({"first": props.get("first"), "children": first_messages}),
+            non_first_messages,
+        ]
+        return final_message
 
-#         final_message = [
-#             "This is the start of the prompt.",
-#             isolate_component({"token_limit": 100, "isolate": props.get("isolate"), "children": isolated_messages}),
-#             non_isolated_messages,
-#             isolate_component({"token_limit": 100, "isolate": props.get("isolate"), "children": mixed_messages}),
-#         ]
-#         return final_message
+    render_options = {"token_limit": 300, "tokenizer": "cl100k_base"}
+    rendered_first = await render(test_component({"first": True}), render_options)
+    rendered_regular = await render(test_component({"first": False}), render_options)
 
-#     render_options = {"token_limit": 300, "tokenizer": "cl100k_base"}
-#     rendered_isolated = await render(test_component({"isolate": True}), render_options)
-#     rendered_non_isolated = await render(test_component({"isolate": False}), render_options)
-
-#     assert "SHOULDBEINCLUDEDONLYIFISOLATED" in rendered_isolated.get("prompt")
-#     assert "SHOULDBEINCLUDEDONLYIFNOTISOLATED" in rendered_non_isolated.get("prompt")
+    assert rendered_first.get("prompt").count("TESTFIRST") == 1
+    assert rendered_regular.get("prompt").count("TESTFIRST") == 10
