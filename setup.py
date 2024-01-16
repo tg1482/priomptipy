@@ -7,7 +7,7 @@ with open("requirements.txt") as f:
 
 setup(
     name="priomptipy",
-    version="0.13",
+    version="0.14",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=requirements,  # Include the requirements
