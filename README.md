@@ -1,6 +1,6 @@
 # PriomptiPy
 
-PriomptiPy is a Python-based prompting library that brings the innovative concept of prioritized prompting from the Anysphere team's JavaScript library [Priompt](https://github.com/anysphere/priompt). Adapted by the [Quarkle](https://quarkle.ai) dev team to Python, PriomptiPy integrates priority-based context management into Python applications, especially useful for AI-enabled agent and chatbot development.
+PriomptiPy (priority + prompt + python) is a Python-based prompting library that brings the innovative concept of prioritized prompting from the Anysphere team's JavaScript library [Priompt](https://github.com/anysphere/priompt). Adapted by the [Quarkle](https://quarkle.ai) dev team to Python, PriomptiPy integrates priority-based context management into Python applications, especially useful for AI-enabled agent and chatbot development.
 
 ## Motivation
 
@@ -40,7 +40,7 @@ result = await render(messages, render_options)
 print(result['prompt'])
 ```
 
-In this example, SystemMessage, UserMessage, and AssistantMessage are used to structure the conversation. Scope allows prioritizing certain parts of the conversation, ensuring the most relevant messages are included within the token limit.
+In this dummy example, SystemMessage, UserMessage, and AssistantMessage are used to structure the conversation. Scope allows prioritizing certain parts of the conversation, ensuring the most relevant messages are included within the token limit. We always include the SystemMessage and the final UserMessage. And we reserve some tokens in the end for an LLM response.
 
 ## Principles
 
@@ -50,26 +50,26 @@ PriomptiPy operates on the principle of prioritized content rendering. Each elem
 
 These are logical components of PriomptiPy. They work the same way as in the original library.
 
-- Scope: Groups messages and assigns priorities, dictating which messages should be rendered first.
-- Empty: Reserves space in the prompt, useful for ensuring there's room for AI-generated content.
-- Isolate: A section of the prompt with its own token limit. Useful when you want to include limited information from multiple sources.
-- First: Sufficiently high child is selected for inclusion, while subsequent children are excluded. This feature is beneficial for creating fallback mechanisms, such as displaying a message like "(result omitted)" when the output exceeds a certain length.
-- Capture: Capture the output and parse it right within the prompt. Implemented but not functional yet.
+- **Scope**: Groups messages and assigns priorities, dictating which messages should be rendered first.
+- **Empty**: Reserves space in the prompt, useful for ensuring there's room for AI-generated content.
+- **Isolate**: A section of the prompt with its own token limit. Useful when you want to include limited information from multiple sources.
+- **First**: Sufficiently high child is selected for inclusion, while subsequent children are excluded. This feature is beneficial for creating fallback mechanisms, such as displaying a message like "(result omitted)" when the output exceeds a certain length.
+- **Capture**: Capture the output and parse it right within the prompt. Implemented but not functional yet.
 
 And these are the message components that are used to build the content to send to AI models -
 
-- SystemMessage: Represents system-level information.
-- UserMessage/AssistantMessage: Denotes messages from the user or the AI assistant.
-- Function: Encapsulates a callable function within the prompt. The callable feature isn't fully supported yet.
+- **SystemMessage**: Represents system-level information.
+- **UserMessage/AssistantMessage**: Denotes messages from the user or the AI assistant.
+- **Function**: Encapsulates a callable function within the prompt. The callable feature isn't fully supported yet.
 
 ## Caveats
 
 While PriomptiPy enhances prompt management, it requires careful consideration of priorities to avoid overcomplicating prompts. It's crucial to balance the use of priorities to maintain efficient and cache-friendly prompts.
 
-- Runnable function calling and capturing isn't fully supported yet. Will look to support this in the future.
-- While the building blocks for cacheing are present, we haven't included any cacheing of results yet. Would benefit from some help here.
-- There could be potential errors in our implementation of the Javascript library, please let us know / open an issue and we will get to it.
-- Would appreciate any support with maintaining and developing this library and keeping it in sync with the awesome Priompt library.
+- Runnable function calling and capturing isn't supported yet. Will look to support this in the future.
+- Just like the JS library, we haven't solved for cacheing yet. Would benefit from some help here.
+- Will add more examples shortly, in the meantime, kindly take a look at the Tests for some sample usage.
+- Would appreciate any support with maintaining and developing this library and keeping it in sync with the awesome Priompt library. There could be bugs in our current implementation as well, so use with caution.
 
 ## Contributions
 
