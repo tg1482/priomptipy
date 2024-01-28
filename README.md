@@ -18,6 +18,8 @@ pip install priomptipy
 
 Consider a scenario where you want to manage a conversation with a user:
 
+![Priomptipy Example](public/Priomptipy.gif)
+
 ```
 from priomptipy import SystemMessage, UserMessage, AssistantMessage, Scope, Empty, render
 
@@ -73,4 +75,4 @@ While PriomptiPy enhances prompt management, it requires careful consideration o
 
 ## Contributions
 
-We warmly welcome contributions to PriomptiPy. The project is open-source under the MIT license, encouraging a collaborative and innovative community.
+This library was co-authored by Tanmay Gupta and Samarth Makhija, the founders of Quarkle. We warmly welcome contributions to PriomptiPy. The project is open-source under the MIT license, encouraging a collaborative and innovative community.
