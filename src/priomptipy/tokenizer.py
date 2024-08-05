@@ -7,6 +7,8 @@ def get_tokenizer_name(model):
         "gpt-4-0613",
         "gpt-4-32k",
         "gpt-4-32k-0613",
+        "gpt-4o",
+        "gpt-4o-mini",
         "text-embedding-ada-002",
         "ft:gpt-3.5-turbo-0613:anysphere::8ERu98np",
         "gpt-3.5-turbo",

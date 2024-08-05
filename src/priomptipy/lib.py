@@ -194,17 +194,17 @@ def create_element(tag, props=None, *children) -> PromptElement:
             raise ValueError("empty tag must have a tokens prop")
         return {
             "type": "scope",
-            "children": [{"type": "empty", "tokenCount": props["tokens"]}],
+            "children": [{"type": "empty", "token_count": props["tokens"]}],
             "absolute_priority": props.get("p") if props and isinstance(props.get("p"), int) else None,
             "relative_priority": props.get("prel") if props and isinstance(props.get("prel"), int) else None,
         }
 
     elif tag == "isolate":
-        if not props or not isinstance(props.get("tokenLimit"), int):
-            raise ValueError("isolate tag must have a tokenLimit prop")
+        if not props or not isinstance(props.get("token_limit"), int):
+            raise ValueError("isolate tag must have a token_limit prop")
         return {
             "type": "scope",
-            "children": [{"type": "isolate", "tokenLimit": props["tokenLimit"], "children": list(children)}],
+            "children": [{"type": "isolate", "token_limit": props["token_limit"], "children": list(children)}],
             "absolute_priority": props.get("p") if props and isinstance(props.get("p"), int) else None,
             "relative_priority": props.get("prel") if props and isinstance(props.get("prel"), int) else None,
         }
@@ -266,7 +266,7 @@ async def render_run(
     # Create an instance of OutputCatcher
     output_catcher = OutputCatcher()
 
-    # Merge props and returnProps
+    # Merge props and return_props
     output_props = {**props, "on_return": lambda x: output_catcher.on_output(x)}
 
     # Render the initial prompt
@@ -321,17 +321,18 @@ async def render(elem: PromptElement, options: RenderOptions) -> RenderOutput:
     Returns:
     RenderOutput: The RenderOutput object.
     """
-    return await render_binary_search(elem, options)
+    render_options = RenderOptions(**options)
+    return await render_binary_search(elem, render_options)
 
 
 async def render_binary_search(elem: PromptElement, options: RenderOptions) -> RenderOutput:
     start_time = time.time() if is_development_environment() else None
 
-    token_limit = options.get("token_limit", MAX_TOKENS.get(options.get("model")))
+    token_limit = options.token_limit or MAX_TOKENS.get(options.model)
     if token_limit is None:
-        raise ValueError("Must specify model or tokenLimit")
+        raise ValueError("Must specify model or token_limit")
 
-    tokenizer = options.get("tokenizer", get_tokenizer_name(options.get("model")))
+    tokenizer = get_tokenizer_name(options.model) or options.tokenizer
     if tokenizer is None:
         raise ValueError("Must specify model or tokenizer")
 
@@ -401,9 +402,9 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
 async def render_backwards_linear_search(elem: PromptElement, options: RenderOptions) -> RenderOutput:
     start_time = time.time() if is_development_environment() else None
 
-    token_limit = options.get("tokenLimit", MAX_TOKENS.get(options.get("model")))
+    token_limit = options.get("token_limit", MAX_TOKENS.get(options.get("model")))
     if token_limit is None:
-        raise ValueError("Must specify model or tokenLimit")
+        raise ValueError("Must specify model or token_limit")
 
     tokenizer = options.get("tokenizer", get_tokenizer_name(options.get("model")))
     if tokenizer is None:
@@ -444,7 +445,7 @@ async def render_backwards_linear_search(elem: PromptElement, options: RenderOpt
     # Get the actual token count
     if prev_prompt["prompt"] is not None:
         exact_token_count = await count_tokens_exact(tokenizer, prev_prompt["prompt"], options)
-        prev_prompt["tokenCount"] = exact_token_count
+        prev_prompt["token_count"] = exact_token_count
 
     duration_ms = (time.time() - start_time) * 1000 if start_time is not None else None
 
@@ -452,7 +453,7 @@ async def render_backwards_linear_search(elem: PromptElement, options: RenderOpt
         "prompt": prev_prompt.get("prompt", ""),
         "token_count": prev_prompt.get("token_count", 0),
         "tokens_reserved": prev_prompt.get("empty_token_count", 0),
-        "tokenLimit": token_limit,
+        "token_limit": token_limit,
         "stream_handlers": prev_prompt.get("stream_handlers", []),
         "duration_ms": duration_ms,
         "priority_cutoff": prev_level if prev_level is not None else BASE_PRIORITY,
@@ -1080,6 +1081,8 @@ async def num_tokens_prompt_string(prompt_string: PromptString, tokenizer: str) 
 
 
 async def count_tokens_exact(tokenizer, prompt, options):
+    if not prompt:
+        return 0
     tokens = 0
     if is_plain_prompt(prompt):
         tokens += await num_tokens_prompt_string(prompt, tokenizer)
@@ -1089,7 +1092,7 @@ async def count_tokens_exact(tokenizer, prompt, options):
             CHATML_PROMPT_EXTRA_TOKEN_COUNT_LINEAR_FACTOR * (len(prompt.get("messages")) - 1) + CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT
         )
         tokens += sum(msg_tokens) + extra_token_count
-        if options.get("last_message_is_incomplete", False):
+        if options.last_message_is_incomplete or False:
             tokens -= CHATML_PROMPT_EXTRA_TOKEN_COUNT_CONSTANT + 1
     else:
         tokens += await num_tokens_prompt_string(prompt.get("text"), tokenizer)
@@ -1123,7 +1126,7 @@ async def inject_name(tokens: int, name: str, tokenizer_object=None):
 
 async def prompt_to_tokens(prompt: RenderedPrompt, tokenizer):
     if tokenizer != "cl100k_base":
-        raise ValueError("promptToTokens only supports the cl100k_base tokenizer for now!")
+        raise ValueError("prompt_to_tokens only supports the cl100k_base tokenizer for now!")
 
     if is_plain_prompt(prompt):
         if isinstance(prompt, list):
@@ -1135,17 +1138,15 @@ async def prompt_to_tokens(prompt: RenderedPrompt, tokenizer):
         parts = []
         for msg in prompt.get("messages"):
             if msg.get("role") == "function":
-                raise ValueError("BUG!! promptToTokens got a chat prompt with a function message, which is not supported yet!")
+                raise ValueError("BUG!! prompt_to_tokens got a chat prompt with a function message, which is not supported yet!")
 
             if msg.get("role") == "assistant" and msg.get("function_call") is not None:
-                raise ValueError("BUG!! promptToTokens got a chat prompt with a function message, which is not supported yet!")
+                raise ValueError("BUG!! prompt_to_tokens got a chat prompt with a function message, which is not supported yet!")
 
             header_tokens = (
                 CL100K_ASSISTANT_TOKENS
                 if msg.get("role") == "assistant"
-                else CL100K_SYSTEM_TOKENS
-                if msg.get("role") == "system"
-                else CL100K_USER_TOKENS
+                else CL100K_SYSTEM_TOKENS if msg.get("role") == "system" else CL100K_USER_TOKENS
             )
             if "name" in msg and msg.get("name") is not None:
                 header_tokens = await inject_name(header_tokens, msg.get("name"))
@@ -1160,7 +1161,7 @@ async def prompt_to_tokens(prompt: RenderedPrompt, tokenizer):
             final_tokens += part
         return final_tokens
 
-    raise ValueError("BUG!! promptToTokens got an invalid prompt")
+    raise ValueError("BUG!! prompt_to_tokens got an invalid prompt")
 
 
 def prompt_to_openai_chat_messages(prompt):
@@ -1169,23 +1170,27 @@ def prompt_to_openai_chat_messages(prompt):
 
     elif is_chat_prompt(prompt):
         return [
-            {"role": msg.get("role"), "name": msg.get("name"), "content": prompt_string_to_string(msg.get("content"))}
-            if msg.get("role") == "function"
-            else {
-                "role": msg.get("role"),
-                "content": prompt_string_to_string(msg.get("content")),
-                "function_call": msg.get("function_call"),
-            }
-            if msg.get("role") == "assistant" and msg.get("function_call") is not None
-            else {
-                "role": msg.get("role"),
-                "content": prompt_string_to_string(msg.get("content")),
-                "name": msg.get("name") if "name" in msg else None,
-            }
+            (
+                {"role": msg.get("role"), "name": msg.get("name"), "content": prompt_string_to_string(msg.get("content"))}
+                if msg.get("role") == "function"
+                else (
+                    {
+                        "role": msg.get("role"),
+                        "content": prompt_string_to_string(msg.get("content")),
+                        "function_call": msg.get("function_call"),
+                    }
+                    if msg.get("role") == "assistant" and msg.get("function_call") is not None
+                    else {
+                        "role": msg.get("role"),
+                        "content": prompt_string_to_string(msg.get("content")),
+                        "name": msg.get("name") if "name" in msg else None,
+                    }
+                )
+            )
             for msg in prompt.get("messages")
         ]
 
-    raise ValueError("BUG!! promptToOpenAIChatMessages got an invalid prompt")
+    raise ValueError("BUG!! prompt_to_openai_chat_messages got an invalid prompt")
 
 
 async def count_message_tokens(message: ChatPromptMessage, tokenizer):
@@ -1241,13 +1246,17 @@ def estimate_lower_bound_tokens_for_prompt(prompt: RenderedPrompt, tokenizer):
 
     if is_chat_prompt(prompt):
         content_tokens = sum(
-            estimate_tokens_using_charcount(b.get("name") + b.get("content"), tokenizer=tokenizer)[0]
-            if b.get("role") == "function"
-            else estimate_tokens_using_charcount(
-                b.get("function_call")["name"] + b.get("function_call")["arguments"] + (b.get("content") or ""), tokenizer=tokenizer
-            )[0]
-            if b.get("role") == "assistant" and b.get("function_call") is not None
-            else estimate_tokens_using_charcount(b.get("content") or "", tokenizer=tokenizer)[0]
+            (
+                estimate_tokens_using_charcount(b.get("name") + b.get("content"), tokenizer=tokenizer)[0]
+                if b.get("role") == "function"
+                else (
+                    estimate_tokens_using_charcount(
+                        b.get("function_call")["name"] + b.get("function_call")["arguments"] + (b.get("content") or ""), tokenizer=tokenizer
+                    )[0]
+                    if b.get("role") == "assistant" and b.get("function_call") is not None
+                    else estimate_tokens_using_charcount(b.get("content") or "", tokenizer=tokenizer)[0]
+                )
+            )
             for b in prompt.get("messages")
         )
     elif is_plain_prompt(prompt):

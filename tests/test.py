@@ -9,6 +9,8 @@ from src.priomptipy.components import SystemMessage, UserMessage, AssistantMessa
 from src.priomptipy.prompt_types import PromptProps, PromptElement, Scope, Isolate, First
 from src.priomptipy.lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.mark.asyncio
 async def test_prompt_to_tokens():
@@ -296,3 +298,79 @@ async def test_first():
 
     assert rendered_first.get("prompt").count("TESTFIRST") == 1
     assert rendered_regular.get("prompt").count("TESTFIRST") == 10
+
+
+@pytest.mark.asyncio
+async def test_isolate_with_null_messages():
+    """
+    Tests the Isolate component with a very small token limit that might result in null messages.
+    This ensures that we can handle cases where single messages can't be added due to token limits.
+    """
+
+    def test_component() -> PromptElement:
+        messages = [
+            SystemMessage("You are Quarkle, an AI Developmental Editor"),
+            Isolate(
+                token_limit=10,
+                children=[
+                    Scope(
+                        [UserMessage("Hello Quarkle, how are you?"), AssistantMessage("Hello, I am doing well. How can I help you")],
+                        absolute_priority=5,
+                    ),
+                ],
+            ),
+            UserMessage("Give me a story title"),
+        ]
+        return messages
+
+    render_options = {"token_limit": 300, "tokenizer": "cl100k_base"}
+    rendered = await render(test_component(), render_options)
+
+    # Check if the system message and final user message are present
+    assert any(
+        msg["role"] == "system" and msg["content"] == "You are Quarkle, an AI Developmental Editor"
+        for msg in rendered["prompt"]["messages"]
+    )
+    assert any(msg["role"] == "user" and msg["content"] == "Give me a story title" for msg in rendered["prompt"]["messages"])
+
+    # Check that no content from the Isolate block is present
+    isolate_content = ["Hello Quarkle", "Hello, I am doing well"]
+    assert all(not any(content in msg.get("content", "") for msg in rendered["prompt"]["messages"]) for content in isolate_content)
+
+
+@pytest.mark.asyncio
+async def test_with_gpt4_model():
+    def test_component() -> PromptElement:
+        messages = [
+            SystemMessage("You are a helpful assistant"),
+            UserMessage("Hello, how are you?"),
+            AssistantMessage("I'm doing well, thank you. How can I assist you today?"),
+        ]
+        return messages
+
+    render_options = {"model": "gpt-4o"}
+    rendered = await render(test_component(), render_options)
+
+    assert rendered["prompt"]["type"] == "chat"
+    assert len(rendered["prompt"]["messages"]) == 3
+    assert rendered["prompt"]["messages"][0]["role"] == "system"
+    assert rendered["prompt"]["messages"][1]["role"] == "user"
+    assert rendered["prompt"]["messages"][2]["role"] == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_with_unknown_model():
+    def test_component() -> PromptElement:
+        messages = [
+            SystemMessage("You are a helpful assistant"),
+            UserMessage("Hello, how are you?"),
+        ]
+        return messages
+
+    render_options = {"model": "unknown-model"}
+
+    # Instead of expecting an exception, let's capture the response
+    with pytest.raises(ValueError) as excinfo:
+        await render(test_component(), render_options)
+
+    assert "Must specify model or token_limit" in str(excinfo.value)
