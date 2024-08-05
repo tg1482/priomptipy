@@ -332,7 +332,7 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
     if token_limit is None:
         raise ValueError("Must specify model or token_limit")
 
-    tokenizer = get_tokenizer_name(options.model) or options.tokenizer
+    tokenizer = get_tokenizer_name(options.model) if options.model else options.tokenizer
     if tokenizer is None:
         raise ValueError("Must specify model or tokenizer")
 
