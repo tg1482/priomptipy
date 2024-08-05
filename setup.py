@@ -11,7 +11,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="priomptipy",
-    version="0.16",
+    version="0.18",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=requirements,  # Include the requirements
