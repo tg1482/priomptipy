@@ -47,7 +47,7 @@ def is_chat_prompt(prompt) -> bool:
 
 
 def is_plain_prompt(prompt) -> bool:
-    return isinstance(prompt, str) or isinstance(prompt, list)
+    return isinstance(prompt, str) or (isinstance(prompt, list) and all(isinstance(item, str) for item in prompt))
 
 
 def is_text_prompt_potentially_with_functions(prompt) -> bool:
@@ -135,7 +135,7 @@ def create_element(tag, props=None, *children) -> PromptElement:
         }
 
     if not isinstance(tag, str):
-        raise ValueError(f"tag must be a string or a function, got {tag}")
+        raise ValueError(f"tag must be a string or a function, got {type(tag)}")
 
     # Handling different string tags
     if tag == "scope":
@@ -261,7 +261,7 @@ async def render_run(
     model_call: Callable[[Any], Any],
     rendered_messages_callback: Callable[[Any], None] = lambda messages: None,
 ):
-    print("Running render_un")
+    print("Running render_run")
 
     # Create an instance of OutputCatcher
     output_catcher = OutputCatcher()
