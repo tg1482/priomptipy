@@ -35,6 +35,17 @@ def estimate_tokens_using_bytecount(text, tokenizer):
 
 
 def estimate_tokens_using_charcount(text, tokenizer):
+    """
+    Estimates the number of tokens in a given text using character count as a heuristic.
+    This is a faster but less accurate alternative to actual token counting.
+
+    Args:
+        text (str): The text to estimate tokens for
+        tokenizer (str): The tokenizer to use for estimation
+
+    Returns:
+        tuple: A tuple containing the lower and upper bounds of tokens
+    """
     length = len(text)
     if tokenizer in ["cl100k_base", "o200k_base"]:
         return length // 10, length // 1.5
