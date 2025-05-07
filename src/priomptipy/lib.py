@@ -47,7 +47,7 @@ def is_chat_prompt(prompt) -> bool:
 
 
 def is_plain_prompt(prompt) -> bool:
-    return isinstance(prompt, str) or isinstance(prompt, list)
+    return isinstance(prompt, str) or (isinstance(prompt, list) and all(isinstance(item, str) for item in prompt))
 
 
 def is_text_prompt_potentially_with_functions(prompt) -> bool:
@@ -124,6 +124,32 @@ def is_development_environment():
 
 
 def create_element(tag, props=None, *children) -> PromptElement:
+    """
+    Creates a prompt element with the given tag, props and children.
+
+    This function handles several cases:
+    1. When tag is a function - creates a scope element that calls the function
+    2. When tag is a string - creates different types of elements based on the tag:
+       - scope: Creates a scope with priority and callback props
+       - br: Creates a newline scope
+       - breaktoken: Creates a token break scope 
+       - hr: Creates a horizontal rule scope
+       - first: Creates element that only renders first matching child
+       - capture: Creates element that captures model output
+       - empty: Creates element reserving token space
+       - isolate: Creates isolated rendering scope
+       - chat: Creates chat message with role
+       - function_definition: Creates function definition for model
+       - normalized_string: Creates string with cached token count
+
+    Args:
+        tag: String tag name or function
+        props: Optional dict of properties/attributes
+        *children: Child elements to include
+
+    Returns:
+        PromptElement: The created prompt element
+    """
     if callable(tag):
         # When tag is a function
         combined_props = {**props, "children": children} if props else {"children": children}
@@ -135,7 +161,7 @@ def create_element(tag, props=None, *children) -> PromptElement:
         }
 
     if not isinstance(tag, str):
-        raise ValueError(f"tag must be a string or a function, got {tag}")
+        raise ValueError(f"tag must be a string or a function, got {type(tag)}")
 
     # Handling different string tags
     if tag == "scope":
@@ -261,7 +287,7 @@ async def render_run(
     model_call: Callable[[Any], Any],
     rendered_messages_callback: Callable[[Any], None] = lambda messages: None,
 ):
-    print("Running render_un")
+    print("Running render_run")
 
     # Create an instance of OutputCatcher
     output_catcher = OutputCatcher()
@@ -326,6 +352,28 @@ async def render(elem: PromptElement, options: RenderOptions) -> RenderOutput:
 
 
 async def render_binary_search(elem: PromptElement, options: RenderOptions) -> RenderOutput:
+    """
+    Renders a prompt element using binary search to find the highest priority level that fits within the token limit.
+
+    This function performs a binary search over priority levels to find the optimal rendering that:
+    1. Includes as much high-priority content as possible
+    2. Stays within the specified token limit
+    3. Preserves the hierarchical structure of the prompt
+
+    The binary search works by:
+    - Computing all priority levels in the prompt tree
+    - Testing different priority level thresholds
+    - Only including content above the threshold
+    - Counting tokens and comparing to the limit
+    - Narrowing the search range until finding the highest valid level
+
+    Args:
+        elem (PromptElement): The prompt element tree to render
+        options (RenderOptions): Rendering options including model and token limits
+
+    Returns:
+        RenderOutput: The rendered prompt at the optimal priority level
+    """
     start_time = time.time() if is_development_environment() else None
 
     token_limit = options.token_limit or MAX_TOKENS.get(options.model)
@@ -351,7 +399,7 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
     # Hydrate isolates
     await hydrate_isolates(elem, tokenizer)
 
-    # Binary search logic
+    # Binary search logic to compute the highest priority level that fits within the token limit
     exclusive_lower_bound = -1
     inclusive_upper_bound = len(sorted_priority_levels) - 1
 
@@ -696,6 +744,24 @@ async def render_with_level_and_count_tokens(elem: PromptElement, level: int, to
 def render_with_level_and_early_exit_with_token_estimation(
     elem: PromptElement, level: int, tokenizer: str, token_limit: int
 ) -> RenderedPrompt:
+    """
+    Renders a prompt element at a specific priority level and checks if it fits within token limit for the given tokenizer.
+    
+    Args:
+        elem: The prompt element to render
+        level: The priority level to render at (inclusive - includes elements at this level)
+        tokenizer: The tokenizer to use
+        token_limit: Maximum allowed tokens (inclusive - can use up to this many tokens)
+        
+    Returns:
+        A dict containing:
+        - prompt: The rendered prompt at this priority level
+        - empty_token_count: Number of tokens reserved for empty space
+        
+    Raises:
+        Exception: If the total tokens (prompt + empty) exceed token_limit
+    """
+
     if elem is None or elem is False:
         return {"prompt": None, "empty_token_count": 0}
 
@@ -838,6 +904,21 @@ async def hydrate_isolates(elem: PromptElement, tokenizer: str) -> None:
 
 
 def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
+    """Resolves and renders a consolidated prompt element at a given priority level.
+
+    Args:
+        elem: The prompt element to render
+        level: The priority level threshold - elements below this level are omitted
+        tokenizer: The name of the tokenizer being used
+        call_ejected_callback: Whether to call eject callbacks on omitted elements
+
+    Returns:
+        dict with:
+            prompt (str|None): The rendered prompt text or None if element should be omitted
+            empty_token_count (int): Number of tokens reserved by empty elements
+            output_handlers (list): List of callback functions to handle completion output
+            stream_handlers (list): List of callback functions to handle streaming output
+    """
     if elem is None or elem is False:
         return {"prompt": None, "empty_token_count": 0, "output_handlers": [], "stream_handlers": []}
 
