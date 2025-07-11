@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "priomptipy"
-version = "0.19.0"
+version = "0.19.1"
 description = "A library for creating smarter prompts for LLMs by adding priority to components."
 authors = [
     {name = "The Quarkle Dev Team", email = "tanmay@quarkle.ai"},
@@ -30,6 +30,22 @@ Repository = "https://github.com/tg1482/priomptipy"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/priomptipy"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "public/",
+    "uv.lock",
+    "*.ipynb",
+    "venv*/",
+    ".venv/",
+    "dist/",
+    "build/",
+    "*.egg-info/",
+    ".pytest_cache/",
+    "__pycache__/",
+    "*.pyc",
+    ".git/",
+]
 
 [tool.black]
 line-length = 140
