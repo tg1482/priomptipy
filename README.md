@@ -4,75 +4,202 @@ PriomptiPy (priority + prompt + python) is a Python-based prompting library that
 
 ## Motivation
 
-It aims to simplify the process of managing and rendering prompts in AI-driven interactions, making it easier to focus on the most relevant context when hydrating the prompts from multiple sources.
+It aims to simplify the process of managing and rendering prompts in AI-driven interactions, making it easier to focus on the most relevant context when hydrating the prompts from multiple sources. This is particularly valuable in RAG applications, chatbots, and AI agents where context space is limited but available content is abundant.
 
 ## Installation
 
 To install PriomptiPy, simply use pip:
 
-```
+```bash
 pip install priomptipy
 ```
 
-## Examples
+For development, we recommend using [UV](https://github.com/astral-sh/uv):
 
-Consider a scenario where you want to manage a conversation with a user:
+```bash
+# Clone the repository
+git clone https://github.com/tg1482/priomptipy.git
+cd priomptipy
 
-![Priomptipy Example](public/Priomptipy.gif)
+# Install development environment
+make install
 
+# Run tests
+make test
 ```
+
+## Quick Start
+
+Here's a simple example showing how PriomptiPy handles prioritized content:
+
+```python
+import asyncio
 from priomptipy import SystemMessage, UserMessage, AssistantMessage, Scope, Empty, render
 
-messages = [
-    SystemMessage("You are Quarkle, an AI Developmental Editor"),
-    Scope([
-        UserMessage("Hello Quarkle, how are you?"),
-        AssistantMessage("Hello, I am doing well. How can I help you?")
-    ], absolute_priority=5),
-    Scope([
-        UserMessage("Write me a haiku on the number 17"),
-        AssistantMessage("Seventeen whispers, In life's mosaic unseen, Quiet steps of time.")
-    ], absolute_priority=10),
-    UserMessage("Okay nice, now give me a title for it"),
-    Empty(token_count=10)
-]
+async def main():
+    messages = [
+        SystemMessage("You are Quarkle, an AI Developmental Editor"),
+        Scope([
+            UserMessage("Hello Quarkle, how are you?"),
+            AssistantMessage("Hello, I am doing well. How can I help you?")
+        ], absolute_priority=5),
+        Scope([
+            UserMessage("Write me a haiku on the number 17"),
+            AssistantMessage("Seventeen whispers, In life's mosaic unseen, Quiet steps of time.")
+        ], absolute_priority=10),
+        UserMessage("Okay nice, now give me a title for it"),
+        Empty(token_count=10)  # Reserve space for response
+    ]
 
-render_options = {"token_limit": 80, "tokenizer": "cl100k_base"}
-result = await render(messages, render_options)
-print(result['prompt'])
+    render_options = {"token_limit": 80, "tokenizer": "cl100k_base"}
+    result = await render(messages, render_options)
+    print(result['prompt'])
+
+# Run the example
+asyncio.run(main())
 ```
 
-In this dummy example, SystemMessage, UserMessage, and AssistantMessage are used to structure the conversation. Scope allows prioritizing certain parts of the conversation, ensuring the most relevant messages are included within the token limit. We always include the SystemMessage and the final UserMessage. And we reserve some tokens in the end for an LLM response.
+In this example, when the token limit is tight, PriomptiPy will:
 
-## Principles
+1. Always include the SystemMessage and final UserMessage (highest priority)
+2. Include the haiku conversation (priority=10) before the greeting (priority=5)
+3. Reserve 10 tokens for the AI response
+4. Gracefully truncate lower-priority content if needed
 
-PriomptiPy operates on the principle of prioritized content rendering. Each element in a prompt can be assigned a priority using Scope, determining its importance in the overall context. This system allows for dynamic and efficient management of conversation flow, particularly in RAG applications where context space is limited but text abound.
+## Core Principles
+
+PriomptiPy operates on the principle of **prioritized content rendering**. Each element in a prompt can be assigned a priority using Scope, determining its importance in the overall context. This system allows for:
+
+- **Dynamic content management** based on available token budget
+- **Graceful degradation** when content exceeds limits
+- **Efficient conversation flow** in multi-turn interactions
+- **Flexible context injection** from multiple sources
 
 ## Components
 
-These are logical components of PriomptiPy. They work the same way as in the original library.
+### Message Components
 
-- **Scope**: Groups messages and assigns priorities, dictating which messages should be rendered first.
-- **Empty**: Reserves space in the prompt, useful for ensuring there's room for AI-generated content.
-- **Isolate**: A section of the prompt with its own token limit. Useful when you want to include limited information from multiple sources.
-- **First**: Sufficiently high child is selected for inclusion, while subsequent children are excluded. This feature is beneficial for creating fallback mechanisms, such as displaying a message like "(result omitted)" when the output exceeds a certain length.
-- **Capture**: Capture the output and parse it right within the prompt. _Implemented but not functional yet._
+- **SystemMessage**: Represents system-level information and instructions
+- **UserMessage**: Denotes messages from the user
+- **AssistantMessage**: Represents AI assistant responses
+- **FunctionMessage**: Handles function call results
 
-And these are the message components that are used to build the content to send to AI models -
+### Control Components
 
-- **SystemMessage**: Represents system-level information.
-- **UserMessage/AssistantMessage**: Denotes messages from the user or the AI assistant.
-- **Function**: Encapsulates a callable function within the prompt. _The callable feature isn't fully supported yet._
+- **Scope**: Groups messages and assigns priorities, dictating rendering order
+- **Empty**: Reserves token space, useful for ensuring room for AI responses
+- **Isolate**: A section with its own token limit - gracefully truncates content that exceeds its budget
+- **First**: Selects the first child that fits within token limits, useful for fallback mechanisms
+- **Capture**: Captures and processes AI output (experimental)
 
-## Caveats
+### Priority System
 
-While PriomptiPy enhances prompt management, it requires careful consideration of priorities to avoid overcomplicating prompts. It's crucial to balance the use of priorities to maintain efficient and cache-friendly prompts.
+- **Absolute Priority**: Direct priority value (higher = more important)
+- **Relative Priority**: Priority relative to parent scope
+- **Graceful Truncation**: Lower priority content is excluded when tokens are limited
 
-- Runnable function calling and capturing isn't supported yet. Will look to support this in the future.
-- Just like the JS library, we haven't solved for cacheing yet. Would benefit from some help here.
-- Will add more examples shortly, in the meantime, kindly take a look at the Tests for some sample usage.
-- Would appreciate any support with maintaining and developing this library and keeping it in sync with the awesome Priompt library. There could be bugs in our current implementation as well, so use with caution.
+## Recent Improvements (v0.19.0)
 
-## Contributions
+### 🎯 Isolate Component Fix
 
-This library was co-authored by Tanmay Gupta and Samarth Makhija, the founders of Quarkle. We warmly welcome contributions to PriomptiPy. The project is open-source under the MIT license, encouraging a collaborative and innovative community.
+The Isolate component now gracefully handles content that exceeds its token limit, truncating based on priorities instead of throwing errors. This enables robust memory management and content injection patterns.
+
+```python
+from priomptipy import Isolate, Scope
+
+# This now works gracefully even if memories exceed 500 tokens
+Isolate(
+    token_limit=500,
+    children=[
+        Scope([...large_memory_content...], absolute_priority=i)
+        for i in range(100)  # Lots of memories
+    ]
+)
+```
+
+### 🚀 Modern Development Setup
+
+- **UV-based package management** for faster dependency resolution
+- **Makefile commands** for common development tasks
+- **Modern pyproject.toml** configuration
+- **Improved testing** with pytest-asyncio
+
+## Development
+
+This project uses [UV](https://github.com/astral-sh/uv) for package management and development:
+
+```bash
+# Available commands
+make help       # Show all available commands
+make install    # Install development environment
+make test       # Run test suite
+make build      # Build distribution packages
+make clean      # Clean build artifacts
+make publish    # Publish to PyPI (requires PYPI_TOKEN)
+```
+
+### Contributing
+
+We welcome contributions! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run `make test` to ensure tests pass
+5. Submit a pull request
+
+## Advanced Usage
+
+### Memory Management with Isolate
+
+```python
+from priomptipy import Isolate, Scope, SystemMessage, UserMessage
+
+# Manage large memory banks with token budgets
+memories = Isolate(
+    token_limit=900,  # Budget for memories
+    children=[
+        Scope([
+            UserMessage(f"Context: {memory_text}"),
+        ], absolute_priority=memory_importance)
+        for memory_text, memory_importance in memory_bank
+    ]
+)
+
+messages = [
+    SystemMessage("You are a helpful assistant with access to memories."),
+    memories,  # Will gracefully fit within 900 tokens
+    UserMessage("Help me with my current task.")
+]
+```
+
+### Fallback Patterns with First
+
+```python
+from priomptipy import First, Scope
+
+# Try detailed response first, fall back to summary if tokens are tight
+First([
+    Scope([detailed_response], absolute_priority=1),
+    Scope([summary_response], absolute_priority=0),
+    Scope(["(Response truncated due to length)"], absolute_priority=-1)
+])
+```
+
+## Caveats and Future Work
+
+- **Function calling**: Basic support implemented, full execution capabilities planned
+- **Caching**: Not yet implemented, would benefit from community contributions
+- **Streaming**: Capture component is experimental
+- **Performance**: Optimizations planned for very large prompt trees
+
+## License
+
+This project is open-source under the MIT license. Originally adapted from the excellent [Priompt](https://github.com/anysphere/priompt) library by Anysphere.
+
+## Contributors
+
+- **Tanmay Gupta** - Co-founder, Quarkle
+- **Samarth Makhija** - Co-founder, Quarkle
+
+We warmly welcome contributions from the community!

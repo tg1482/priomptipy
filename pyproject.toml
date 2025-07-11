@@ -1,2 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "priomptipy"
+version = "0.19.0"
+description = "A library for creating smarter prompts for LLMs by adding priority to components."
+authors = [
+    {name = "The Quarkle Dev Team", email = "tanmay@quarkle.ai"},
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.8"
+dependencies = [
+    "tiktoken>=0.7.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=23.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/tg1482/priomptipy"
+Repository = "https://github.com/tg1482/priomptipy"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/priomptipy"]
+
 [tool.black]
 line-length = 140
+target-version = ['py38']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

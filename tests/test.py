@@ -1,13 +1,8 @@
 import pytest
-import sys
-import os
 
-# Assuming your tests directory is at the same level as the src directory
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from src.priomptipy.components import SystemMessage, UserMessage, AssistantMessage, Function, FunctionMessage
-from src.priomptipy.prompt_types import PromptProps, PromptElement, Scope, Isolate, First
-from src.priomptipy.lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
+from priomptipy.components import SystemMessage, UserMessage, AssistantMessage, Function, FunctionMessage
+from priomptipy.prompt_types import PromptProps, PromptElement, Scope, Isolate, First
+from priomptipy.lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
 
 pytestmark = pytest.mark.asyncio
 

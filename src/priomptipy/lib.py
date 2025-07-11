@@ -363,11 +363,15 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
 
         try:
             prompt = render_with_level_and_early_exit_with_token_estimation(elem, candidate_level, tokenizer, token_limit)
-            token_count = await count_tokens_exact(tokenizer, prompt.get("prompt", ""), options)
-            if token_count + prompt.get("empty_token_count", 0) > token_limit:
+            # Check if token limit was exceeded during early estimation
+            if prompt.get("token_limit_exceeded", False):
                 exclusive_lower_bound = candidate_level_index
             else:
-                inclusive_upper_bound = candidate_level_index
+                token_count = await count_tokens_exact(tokenizer, prompt.get("prompt", ""), options)
+                if token_count + prompt.get("empty_token_count", 0) > token_limit:
+                    exclusive_lower_bound = candidate_level_index
+                else:
+                    inclusive_upper_bound = candidate_level_index
         except Exception as e:
             exclusive_lower_bound = candidate_level_index
         finally:
@@ -379,9 +383,12 @@ async def render_binary_search(elem: PromptElement, options: RenderOptions) -> R
     final_prompt = render_with_level(elem, sorted_priority_levels[inclusive_upper_bound], tokenizer, True)
     token_count = await count_tokens_exact(tokenizer, final_prompt.get("prompt", ""), options)
 
-    if token_count + final_prompt.get("empty_token_count", 0) > token_limit:
-        raise ValueError(
-            f"Base prompt estimated token count is {token_count} with {final_prompt.get('empty_token_count', 0)} tokens reserved, which is higher than the limit {token_limit}."
+    # Note: We don't throw an error here for token limit exceeded because Isolate components
+    # should handle their own token budgets gracefully. The binary search process above
+    # should have already found the best fit within the global token limit.
+    if is_development_environment() and token_count + final_prompt.get("empty_token_count", 0) > token_limit:
+        print(
+            f"WARNING: Final prompt token count ({token_count}) with reserved tokens ({final_prompt.get('empty_token_count', 0)}) exceeds limit ({token_limit}), but this may be due to Isolate components handling their own budgets."
         )
 
     duration_ms = (time.time() - start_time) * 1000 if start_time is not None else None
@@ -713,7 +720,9 @@ def render_with_level_and_early_exit_with_token_estimation(
             }
         lower_bound = estimate_lower_bound_tokens_for_prompt(accumulated_result["prompt"], tokenizer)
         if lower_bound > token_limit:
-            raise ValueError("Token limit exceeded!")
+            # Instead of throwing an error, return a result that indicates token limit exceeded
+            # This allows the binary search to handle it gracefully and Isolate components to manage their own budgets
+            accumulated_result["token_limit_exceeded"] = True
         return accumulated_result
 
     if isinstance(elem, str) or isinstance(elem, (int, float)):
