@@ -661,6 +661,8 @@ async def render_with_level_and_count_tokens(elem: PromptElement, level: int, to
                 }
                 if hasattr(elem, "function_call") and elem.function_call is not None:
                     message["function_call"] = elem.function_call
+                if hasattr(elem, "tool_calls") and elem.tool_calls is not None:
+                    message["tool_calls"] = elem.tool_calls
             elif elem.role == "function":
                 message = {
                     "role": elem.role,
@@ -781,6 +783,8 @@ def render_with_level_and_early_exit_with_token_estimation(
                 message = {"role": elem.role, "content": child_results["prompt"]}
                 if elem.function_call:
                     message["function_call"] = elem.function_call
+                if hasattr(elem, "tool_calls") and elem.tool_calls:
+                    message["tool_calls"] = elem.tool_calls
 
             return {
                 "prompt": {
@@ -942,6 +946,8 @@ def render_with_level(elem, level, tokenizer, call_ejected_callback=False):
                 }
                 if hasattr(elem, "function_call") and elem.function_call is not None:
                     message["function_call"] = elem.function_call
+                if hasattr(elem, "tool_calls") and elem.tool_calls is not None:
+                    message["tool_calls"] = elem.tool_calls
             elif elem.role == "function":
                 message = {
                     "role": elem.role,
@@ -1149,8 +1155,8 @@ async def prompt_to_tokens(prompt: RenderedPrompt, tokenizer):
             if msg.get("role") == "function":
                 raise ValueError("BUG!! prompt_to_tokens got a chat prompt with a function message, which is not supported yet!")
 
-            if msg.get("role") == "assistant" and msg.get("function_call") is not None:
-                raise ValueError("BUG!! prompt_to_tokens got a chat prompt with a function message, which is not supported yet!")
+            if msg.get("role") == "assistant" and (msg.get("function_call") is not None or msg.get("tool_calls") is not None):
+                raise ValueError("BUG!! prompt_to_tokens got a chat prompt with a function/tool_calls message, which is not supported yet!")
 
             header_tokens = (
                 CL100K_ASSISTANT_TOKENS
@@ -1189,11 +1195,19 @@ def prompt_to_openai_chat_messages(prompt):
                         "function_call": msg.get("function_call"),
                     }
                     if msg.get("role") == "assistant" and msg.get("function_call") is not None
-                    else {
-                        "role": msg.get("role"),
-                        "content": prompt_string_to_string(msg.get("content")),
-                        "name": msg.get("name") if "name" in msg else None,
-                    }
+                    else (
+                        {
+                            "role": msg.get("role"),
+                            "content": prompt_string_to_string(msg.get("content")),
+                            "tool_calls": msg.get("tool_calls"),
+                        }
+                        if msg.get("role") == "assistant" and msg.get("tool_calls") is not None
+                        else {
+                            "role": msg.get("role"),
+                            "content": prompt_string_to_string(msg.get("content")),
+                            "name": msg.get("name") if "name" in msg else None,
+                        }
+                    )
                 )
             )
             for msg in prompt.get("messages")
@@ -1213,6 +1227,12 @@ async def count_message_tokens(message: ChatPromptMessage, tokenizer):
             await num_tokens_prompt_string(message.get("content"), tokenizer=tokenizer) if message.get("content") is not None else 0
         )
         return function_call_tokens + content_tokens
+    elif message.get("role") == "assistant" and message.get("tool_calls") is not None:
+        tool_calls_tokens = await count_tool_calls_message_tokens(message.get("tool_calls"), tokenizer=tokenizer)
+        content_tokens = (
+            await num_tokens_prompt_string(message.get("content"), tokenizer=tokenizer) if message.get("content") is not None else 0
+        )
+        return tool_calls_tokens + content_tokens
     else:
         return await num_tokens_prompt_string(message.get("content") or "", tokenizer=tokenizer)
 
@@ -1221,6 +1241,16 @@ async def count_function_call_message_tokens(function_call, tokenizer):
     name_tokens = await num_tokens(function_call["name"], tokenizer=tokenizer)
     argument_tokens = await num_tokens(function_call["arguments"], tokenizer=tokenizer)
     return name_tokens + argument_tokens + 5
+
+
+async def count_tool_calls_message_tokens(tool_calls, tokenizer):
+    total = 0
+    for tc in tool_calls:
+        fn = tc.get("function", {})
+        name_tokens = await num_tokens(fn.get("name", ""), tokenizer=tokenizer)
+        arg_tokens = await num_tokens(fn.get("arguments", ""), tokenizer=tokenizer)
+        total += name_tokens + arg_tokens + 5
+    return total
 
 
 async def count_function_tokens(function_definition: ChatAndFunctionPromptFunction, tokenizer):
@@ -1263,7 +1293,15 @@ def estimate_lower_bound_tokens_for_prompt(prompt: RenderedPrompt, tokenizer):
                         b.get("function_call")["name"] + b.get("function_call")["arguments"] + (b.get("content") or ""), tokenizer=tokenizer
                     )[0]
                     if b.get("role") == "assistant" and b.get("function_call") is not None
-                    else estimate_tokens_using_charcount(b.get("content") or "", tokenizer=tokenizer)[0]
+                    else (
+                        estimate_tokens_using_charcount(
+                            "".join(tc.get("function", {}).get("name", "") + tc.get("function", {}).get("arguments", "") for tc in b.get("tool_calls", []))
+                            + (b.get("content") or ""),
+                            tokenizer=tokenizer,
+                        )[0]
+                        if b.get("role") == "assistant" and b.get("tool_calls") is not None
+                        else estimate_tokens_using_charcount(b.get("content") or "", tokenizer=tokenizer)[0]
+                    )
                 )
             )
             for b in prompt.get("messages")
