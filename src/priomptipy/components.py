@@ -11,9 +11,13 @@ def UserMessage(children=None, name=None):
     return ChatUserSystemMessage(type="chat", role="user", name=name, children=flatten(children) if children is not None else [])
 
 
-def AssistantMessage(children=None, function_call=None, name=None):
+def AssistantMessage(children=None, function_call=None, tool_calls=None, name=None):
     return ChatAssistantMessage(
-        type="chat", role="assistant", function_call=function_call, children=flatten(children) if children is not None else []
+        type="chat",
+        role="assistant",
+        function_call=function_call,
+        tool_calls=tool_calls,
+        children=flatten(children) if children is not None else [],
     )
 
 

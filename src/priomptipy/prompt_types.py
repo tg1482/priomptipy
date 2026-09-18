@@ -79,6 +79,7 @@ class ChatAssistantMessage:
     role: str
     children: List["Node"]
     function_call: Optional[Dict[str, str]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 # ChatFunctionResultMessage type
@@ -163,6 +164,7 @@ class ChatPromptAssistantMessage:
     role: str
     content: Optional[PromptString] = None
     function_call: Optional[Dict[str, str]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 # ChatPromptFunctionResultMessage type

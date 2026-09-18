@@ -2,7 +2,7 @@ import pytest
 
 from priomptipy.components import SystemMessage, UserMessage, AssistantMessage, Function, FunctionMessage
 from priomptipy.prompt_types import PromptProps, PromptElement, Scope, Isolate, First
-from priomptipy.lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions
+from priomptipy.lib import render, prompt_to_tokens, is_chat_prompt, prompt_has_functions, prompt_to_openai_chat_messages
 
 pytestmark = pytest.mark.asyncio
 
@@ -369,3 +369,39 @@ async def test_with_unknown_model():
         await render(test_component(), render_options)
 
     assert "Must specify model or token_limit" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_tool_calls_message():
+    tool_calls = [
+        {
+            "id": "call_123",
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "arguments": '{"location": "San Francisco, CA"}',
+            },
+        }
+    ]
+
+    def test_component() -> PromptElement:
+        return [
+            SystemMessage("You are a helpful assistant"),
+            UserMessage("What's the weather?"),
+            AssistantMessage(tool_calls=tool_calls),
+        ]
+
+    render_options = {"token_limit": 500, "tokenizer": "cl100k_base"}
+    rendered = await render(test_component(), render_options)
+
+    assert rendered["prompt"]["type"] == "chat"
+    assert len(rendered["prompt"]["messages"]) == 3
+    assistant_msg = rendered["prompt"]["messages"][2]
+    assert assistant_msg["role"] == "assistant"
+    assert assistant_msg.get("tool_calls") == tool_calls
+    assert rendered["token_count"] > 0
+
+    openai_messages = prompt_to_openai_chat_messages(rendered["prompt"])
+    assert len(openai_messages) == 3
+    assert openai_messages[2]["role"] == "assistant"
+    assert openai_messages[2]["tool_calls"] == tool_calls
